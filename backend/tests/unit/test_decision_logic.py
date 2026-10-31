@@ -149,3 +149,11 @@ def test_no_key_redirect_keeps_call_sid_query_intact():
     from backend.app.services.communications.ivr_service import generate_twiml_for_registered_step
     twiml = generate_twiml_for_registered_step("warning", "warning_prompt", None, "http://x/ivr/registered/step?call_sid=CA1")
     assert "call_sid=CA1&amp;timeout=1" in twiml
+
+
+def test_whitefly_question_repeats_once_then_moves_on_as_dont_know():
+    from backend.app.services.communications.registered_state_machine import process_registered_step_input
+    first = process_registered_step_input("warning", "whitefly_question", None, reprompt_count=0)
+    assert first["next_step"] == "whitefly_question" and first["reprompt"]
+    second = process_registered_step_input("warning", "whitefly_question", None, reprompt_count=1)
+    assert second["next_step"] == "sms_dispatched" and second["action"] == "record_whitefly_unknown"

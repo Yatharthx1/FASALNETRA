@@ -65,6 +65,16 @@ def get_registered_flow_config(flow: str, step: str, farmer: Any = None,
                 "valid_digits": ["1"],
                 "hangup": False,
             }
+        elif step == "whitefly_question":
+            # One field question while the farmer is on the line; the answer is a keypad signal for the evidence card
+            return {
+                "step": "whitefly_question",
+                "prompt_id": "p02_whitefly_question",
+                "prompt_text": "फोटो का लिंक SMS से भेज दिया है। एक सवाल: क्या पत्तों के नीचे छोटी सफेद मक्खियां दिख रही हैं? हां के लिए 1, नहीं के लिए 2 दबाइए। दोबारा सुनने के लिए 9 दबाइए।",
+                "num_digits": 1,
+                "valid_digits": ["1", "2"],
+                "hangup": False,
+            }
         elif step == "sms_dispatched":
             return {
                 "step": "sms_dispatched",
@@ -149,7 +159,7 @@ def process_registered_step_input(
     if flow == "warning" and current_step == "warning_prompt":
         if clean_digits == "1":
             return {
-                "next_step": "sms_dispatched",
+                "next_step": "whitefly_question",
                 "reprompt": False,
                 "reprompt_count": 0,
                 "action": "send_sms_link",
@@ -164,11 +174,37 @@ def process_registered_step_input(
                 "message": "कृपया लिंक प्राप्त करने के लिए 1 दबाएं।",
             }
         return {
-            "next_step": "sms_dispatched",
+            "next_step": "whitefly_question",
             "reprompt": False,
             "reprompt_count": 0,
             "action": "send_sms_link",
             "message": "Defaulting to SMS link dispatch.",
+        }
+
+    if flow == "warning" and current_step == "whitefly_question":
+        if clean_digits in ["1", "2"]:
+            answer = "yes" if clean_digits == "1" else "no"
+            return {
+                "next_step": "sms_dispatched",
+                "reprompt": False,
+                "reprompt_count": 0,
+                "action": f"record_whitefly_{answer}",
+                "message": f"Whitefly under leaves: {answer}.",
+            }
+        if reprompt_count < 1:
+            return {
+                "next_step": "whitefly_question",
+                "reprompt": True,
+                "reprompt_count": reprompt_count + 1,
+                "action": "reprompt",
+                "message": "कृपया हां के लिए 1 या नहीं के लिए 2 दबाएं।",
+            }
+        return {
+            "next_step": "sms_dispatched",
+            "reprompt": False,
+            "reprompt_count": 0,
+            "action": "record_whitefly_unknown",   # PRD: no answer -> move on with "pata nahi"
+            "message": "No answer; saved as don't know.",
         }
 
     # Flow 3: Result & Drone Booking

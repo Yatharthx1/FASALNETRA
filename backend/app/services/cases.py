@@ -140,6 +140,8 @@ async def on_ivr_action(db: AsyncSession, phone: str, step: str, digit: str | No
             await book_didi(db, case)
         except CaseStateError as exc:
             await emit(db, "booking_skipped", case.id, reason=str(exc))
+    elif action in ("record_whitefly_yes", "record_whitefly_no"):
+        await save_keypad(db, case, {"whitefly_under_leaves": action == "record_whitefly_yes"})
     elif action.startswith("record_feedback_"):
         await emit(db, "followup_recorded", case.id, feedback=action.removeprefix("record_feedback_"))
 

@@ -65,13 +65,21 @@ def test_registered_farmer_p02_warning_call_and_sms():
             data={"Digits": "1"},
         )
         assert r.status_code == 200
-        assert "<Hangup" in r.text
         assert "SMS" in r.text
+        assert "सफेद मक्खियां" in r.text   # whitefly question while the farmer is still on the line
 
-        # Verify session records SMS dispatch
+        # 3. Farmer answers yes
+        r = client.post(
+            f"/api/v1/ivr/registered/step?call_sid=session-{phone.replace('+', '')}",
+            data={"Digits": "1"},
+        )
+        assert "<Hangup" in r.text
+
+        # Verify session records SMS dispatch and the answer
         db = SessionLocal()
         session = db.query(IVRSession).filter(IVRSession.phone == phone).first()
         assert session.answers.get("sms_sent") is True
+        assert session.answers.get("whitefly_under_leaves") == "yes"
         db.close()
 
 

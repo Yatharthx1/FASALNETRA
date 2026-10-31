@@ -50,8 +50,10 @@ async def test_full_demo_flow_ends_with_a_zone_only_spray(client):
     assert call["simulated"] and call["first_prompt"]["current_step"] == "warning_prompt"
     phone = call["first_prompt"]["phone"]
     pressed = (await client.post(f"{API}/ivr/simulate/registered", json={"phone": phone, "digits": "1"})).json()
-    assert pressed["current_step"] == "sms_dispatched"
-    await client.post(f"{API}/cases/{cid}/keypad", json={"answers": {"whitefly_under_leaves": True}})
+    assert pressed["current_step"] == "whitefly_question"
+    answered = (await client.post(f"{API}/ivr/simulate/registered", json={"phone": phone, "digits": "1"})).json()
+    assert answered["current_step"] == "sms_dispatched"
+    assert (await client.get(f"{API}/cases/{cid}")).json()["keypad"] == {"whitefly_under_leaves": True}
     await client.post(f"{API}/cases/{cid}/traps", json={"counts": [3, 12, 5, 2]})
 
     for i, cell in enumerate(case["target_cells"]):

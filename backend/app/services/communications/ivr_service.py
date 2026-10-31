@@ -275,6 +275,11 @@ def advance_registered(db, session: IVRSession, digits: str | None) -> dict[str,
         answers["followup_feedback"] = action.replace("record_feedback_", "")
         session.answers = answers
 
+    elif action.startswith("record_whitefly_"):
+        answers = dict(session.answers or {})
+        answers["whitefly_under_leaves"] = action.replace("record_whitefly_", "")
+        session.answers = answers
+
     session.current_step = step_result["next_step"]
     session.reprompt_count = step_result["reprompt_count"]
     if step_result["next_step"] in REGISTERED_DONE_STEPS:
