@@ -1,4 +1,4 @@
-﻿# Service boundaries
+# Service boundaries
 
 Keep external integrations behind service adapters:
 

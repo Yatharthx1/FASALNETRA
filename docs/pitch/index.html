@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FasalNetra pitch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700&family=Mukta:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+/* ===========================================
+   VIEWPORT FITTING: MANDATORY BASE STYLES (frontend-slides)
+   =========================================== */
+html, body { height: 100%; overflow-x: hidden; }
+html, body { scroll-snap-type: y mandatory; scroll-behavior: smooth; }   /* body is the scroller once overflow-x is set */
+.slide { width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; scroll-snap-align: start;
+  display: flex; flex-direction: column; position: relative; }
+.slide-content { flex: 1; display: flex; flex-direction: column; justify-content: center; max-height: 100%;
+  overflow: hidden; padding: var(--slide-padding); gap: var(--content-gap); }
+:root {
+  --title-size: clamp(1.5rem, 5vw, 4rem);
+  --h2-size: clamp(1.25rem, 3.5vw, 2.5rem);
+  --h3-size: clamp(1rem, 2.5vw, 1.75rem);
+  --body-size: clamp(0.75rem, 1.5vw, 1.125rem);
+  --small-size: clamp(0.65rem, 1vw, 0.875rem);
+  --slide-padding: clamp(1rem, 4vw, 4rem);
+  --content-gap: clamp(0.5rem, 2vw, 2rem);
+  --element-gap: clamp(0.25rem, 1vw, 1rem);
+}
+.card { max-width: min(90vw, 1000px); max-height: min(80vh, 700px); }
+.bullet-list { gap: clamp(0.4rem, 1vh, 1rem); }
+.bullet-list li { font-size: var(--body-size); line-height: 1.4; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: clamp(0.5rem, 1.5vw, 1rem); }
+@media (max-height: 700px) { :root { --slide-padding: clamp(0.75rem, 3vw, 2rem); --content-gap: clamp(0.4rem, 1.5vw, 1rem);
+  --title-size: clamp(1.25rem, 4.5vw, 2.5rem); --h2-size: clamp(1rem, 3vw, 1.75rem); } }
+@media (max-height: 600px) { :root { --slide-padding: clamp(0.5rem, 2.5vw, 1.5rem); --content-gap: clamp(0.3rem, 1vw, 0.75rem);
+  --title-size: clamp(1.1rem, 4vw, 2rem); --body-size: clamp(0.7rem, 1.2vw, 0.95rem); } .nav-dots, .keyboard-hint, .decorative { display: none; } }
+@media (max-height: 500px) { :root { --slide-padding: clamp(0.4rem, 2vw, 1rem); --title-size: clamp(1rem, 3.5vw, 1.5rem);
+  --h2-size: clamp(0.9rem, 2.5vw, 1.25rem); --body-size: clamp(0.65rem, 1vw, 0.85rem); } }
+@media (max-width: 600px) { :root { --title-size: clamp(1.25rem, 7vw, 2.5rem); } .grid { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.2s !important; } html { scroll-behavior: auto; } }
+
+/* ===========================================
+   THEME: FasalNetra field palette (same tokens as the app)
+   Flat backgrounds, one alert red, Devanagari-ready type.
+   =========================================== */
+:root {
+  --soil-900: #2b2118; --soil-500: #7a6552; --soil-200: #e7dfd3; --soil-100: #f3eee6; --paper: #fbf8f3;
+  --leaf-800: #1f4d2b; --leaf-600: #2f7a40; --leaf-100: #e3f0e2;
+  --alert-600: #c2410c; --alert-100: #fde8dc; --amber-600: #b7791f; --amber-100: #fbf0d9;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+body { margin: 0; font-family: "Mukta", "Manrope", system-ui, sans-serif; color: var(--soil-900); background: var(--paper);
+  -webkit-font-smoothing: antialiased; }
+.slide:nth-child(even) { background: var(--soil-100); }
+.slide.dark { background: var(--leaf-800); color: var(--paper); }
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: var(--title-size); line-height: 1.05; font-weight: 600; text-wrap: balance; max-width: 18ch; }
+h2 { font-size: var(--h2-size); line-height: 1.1; font-weight: 600; text-wrap: balance; max-width: 26ch; }
+h3 { font-size: var(--h3-size); line-height: 1.2; font-weight: 600; }
+p, li { font-size: var(--body-size); line-height: 1.45; text-wrap: pretty; }
+.eyebrow { font-family: "Manrope", sans-serif; font-size: var(--small-size); font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--alert-600); }
+.dark .eyebrow { color: #fde047; }
+.muted { color: var(--soil-500); }
+.dark .muted { color: var(--soil-200); }
+.num { font-family: "Manrope", sans-serif; font-variant-numeric: tabular-nums; }
+.big { font-family: "Manrope", sans-serif; font-variant-numeric: tabular-nums; font-weight: 700;
+  font-size: clamp(2.5rem, 9vw, 7rem); line-height: 1; padding-bottom: 0.12em; color: var(--alert-600); }
+.bullet-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; max-width: 60ch; }
+.bullet-list li { padding-left: 1.2em; position: relative; }
+.bullet-list li::before { content: ""; position: absolute; left: 0; top: 0.6em; width: 0.5em; height: 0.5em; border-radius: 2px; background: var(--leaf-600); }
+.tile { background: #fff; border: 1px solid var(--soil-200); border-radius: 16px; padding: clamp(0.75rem, 1.6vw, 1.25rem);
+  display: flex; flex-direction: column; gap: var(--element-gap); }
+.dark .tile { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.15); }
+.tile .k { font-family: "Manrope", sans-serif; font-size: var(--small-size); font-weight: 700; color: var(--soil-500); }
+.dark .tile .k { color: var(--soil-200); }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--content-gap); align-items: center; }
+@media (max-width: 760px) and (min-height: 501px) { .split { grid-template-columns: 1fr; } }
+/* Short landscape screens: keep side by side, shrink figures instead of stacking (never shrink body text). */
+@media (max-height: 500px) {
+  .chart { height: 24vh; }
+  .gridfig { max-height: 70vh; width: auto; height: 70vh; }
+  .split { align-items: start; }
+  .bars { gap: 0.2em 0.6em; }
+}
+.chip { display: inline-block; padding: 0.15em 0.6em; border-radius: 999px; font-size: var(--small-size); font-weight: 600; border: 1px solid; }
+.chip.high { color: var(--leaf-800); background: var(--leaf-100); border-color: var(--leaf-600); }
+.chip.medium { color: var(--amber-600); background: var(--amber-100); border-color: var(--amber-600); }
+.chip.red { color: var(--alert-600); background: var(--alert-100); border-color: var(--alert-600); }
+
+/* Flow strip */
+.flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: clamp(0.4rem, 1vw, 0.75rem); counter-reset: s; }
+.flow .tile { counter-increment: s; }
+.flow .tile::before { content: counter(s); font-family: "Manrope", sans-serif; font-weight: 700; color: var(--alert-600); font-size: var(--h3-size); }
+
+/* Backtest chart (bars built from real engine output in JS) */
+.chart { display: flex; align-items: flex-end; gap: 2px; height: min(34vh, 260px); width: 100%; position: relative;
+  border-bottom: 1px solid var(--soil-500); }
+.chart i { flex: 1; background: var(--soil-200); border-radius: 2px 2px 0 0; transform-origin: bottom; }
+.chart i.watch { background: var(--amber-600); }
+.chart i.high { background: var(--alert-600); }
+.chart .line70 { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--alert-600); }
+.chart .mark { position: absolute; bottom: 100%; transform: translateX(-50%); font-size: var(--small-size); font-weight: 600; white-space: nowrap; }
+.axis { display: flex; justify-content: space-between; font-size: var(--small-size); color: var(--soil-500); }
+
+/* Satellite grid figure */
+.gridfig { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; width: min(30vw, 260px); aspect-ratio: 5 / 14;
+  max-height: 62vh; padding: 6px; border: 3px solid var(--soil-900); border-radius: 6px; background: var(--leaf-100); }
+.gridfig i { background: var(--leaf-600); opacity: 0.35; border-radius: 2px; }
+.gridfig i.f { background: var(--alert-600); opacity: 0.9; }
+
+/* Signal bars */
+.bars { display: grid; grid-template-columns: max-content 1fr max-content; gap: 0.4em 0.8em; align-items: center; max-width: 560px; width: 100%; }
+.bars span { font-size: var(--small-size); }
+.bar { height: 0.6em; background: var(--soil-200); border-radius: 999px; overflow: hidden; }
+.bar b { display: block; height: 100%; background: var(--leaf-600); border-radius: 999px; }
+.bar b.g { background: var(--soil-500); }
+
+/* Reveal on enter */
+.js .reveal { opacity: 0; transform: translateY(24px); transition: opacity 600ms var(--ease), transform 600ms var(--ease); }
+.js .slide.visible .reveal { opacity: 1; transform: none; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 80ms; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 160ms; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 240ms; }
+
+/* Navigation */
+.nav-dots { position: fixed; right: clamp(0.5rem, 1.5vw, 1.25rem); top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 10; }
+.nav-dots button { width: 10px; height: 10px; border-radius: 50%; border: 1px solid var(--soil-500); background: transparent; padding: 0; cursor: pointer; }
+.nav-dots button[aria-current="true"] { background: var(--alert-600); border-color: var(--alert-600); }
+.progress { position: fixed; left: 0; top: 0; height: 3px; background: var(--alert-600); z-index: 10; transition: width 300ms var(--ease); }
+.keyboard-hint { position: fixed; left: var(--slide-padding); bottom: 0.75rem; font-size: var(--small-size); color: var(--soil-500); }
+:focus-visible { outline: 3px solid #1d4ed8; outline-offset: 2px; }
+
+/* PDF export: one slide per 16:9 page, everything revealed, no navigation chrome. */
+@page { size: 1280px 720px; margin: 0; }
+@media print {
+  html, body { height: auto; overflow: visible; scroll-snap-type: none; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .slide { width: 1280px; height: 720px; break-after: page; page-break-after: always; }
+  .slide:last-child { break-after: auto; page-break-after: auto; }
+  .reveal, .js .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+  .nav-dots, .progress, .keyboard-hint { display: none !important; }
+  :root { --body-size: 21px; --small-size: 14px; --h2-size: 44px; --h3-size: 26px; --title-size: 68px; }
+  .split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; align-items: center; }
+  .gridfig { height: 62vh; width: auto; max-height: none; }
+}
+</style>
+</head>
+<body>
+<div class="progress" aria-hidden="true"></div>
+<main id="deck">
+
+<!-- 1. Title -->
+<section class="slide dark" aria-label="Title">
+  <div class="slide-content">
+    <p class="eyebrow reveal">AI Manthan 2.0 · PS9 Crop health mapping</p>
+    <h1 class="reveal">FasalNetra</h1>
+    <h2 class="reveal" style="font-weight:500">Satellite finds the weak patch. The farmer confirms it. Drone Didi sprays only that patch.</h2>
+    <p class="muted reveal">फसलनेत्र · the crop's eye, for soybean farmers of Malwa</p>
+  </div>
+</section>
+
+<!-- 2. Problem -->
+<section class="slide" aria-label="Problem">
+  <div class="slide-content">
+    <p class="eyebrow reveal">The problem</p>
+    <h2 class="reveal">Farmers find disease late, then spray the whole field for a problem in one corner.</h2>
+    <div class="grid reveal">
+      <div class="tile"><span class="k">ONE YELLOW PATCH, THREE CAUSES</span><p>Virus, water stress or nutrient shortage. Each needs a different fix, and a wrong guess wastes the spray.</p></div>
+      <div class="tile"><span class="k">MANDSAUR 2025</span><p>Yellow mosaic outbreak; compensation survey ordered on <b class="num">1 Sept 2025</b>.</p></div>
+      <div class="tile"><span class="k">INDIA SOYBEAN OUTPUT</span><p class="num"><b>125.82 → 105.36</b> lakh t (2024 → 2025)</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. What we learned -->
+<section class="slide" aria-label="Expert insight">
+  <div class="slide-content split">
+    <div style="display:flex;flex-direction:column;gap:var(--content-gap)">
+      <p class="eyebrow reveal">What we learned from ICAR-IISR</p>
+      <h2 class="reveal">We consulted Dr. Savita Kolhe, ICAR-IISR Indore. Three points shaped the design.</h2>
+    </div>
+    <ul class="bullet-list reveal">
+      <li><b>Warn about 15 days early.</b> After symptoms show, it is too late. So we predict first.</li>
+      <li><b>Drone imaging is unreliable:</b> rotor wind shakes the plants. So the drone only sprays; the farmer's phone collects the evidence.</li>
+      <li><b>Farmers trust the weekly ICAR advisory.</b> So every spray recommendation comes from it, with the source read out.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 4. How it works -->
+<section class="slide" aria-label="How it works">
+  <div class="slide-content">
+    <p class="eyebrow reveal">How it works · the farmer only presses 1</p>
+    <h2 class="reveal">From a weather warning to a spray of only the mapped zone</h2>
+    <div class="flow reveal">
+      <div class="tile"><p><b>Risk engine</b> scores every field daily from weather, crop stage and advisory</p></div>
+      <div class="tile"><p><b>Hindi voice call</b> warns the farmer and asks yes/no questions on the keypad</p></div>
+      <div class="tile"><p><b>SMS link</b> opens a voice-guided page; no app, no typing</p></div>
+      <div class="tile"><p><b>Grid walk</b> to the satellite-flagged 10 m cells; photo of leaf top and underside</p></div>
+      <div class="tile"><p><b>Evidence card</b>: every signal votes into one confidence score</p></div>
+      <div class="tile"><p><b>High:</b> advice + zone-only spray. <b>Otherwise:</b> Drone Didi checks first</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 5. Backtest -->
+<section class="slide" aria-label="Backtest">
+  <div class="slide-content">
+    <p class="eyebrow reveal">Proof 1 · Mandsaur 2025 backtest</p>
+    <div class="split reveal">
+      <div><p class="big">27 days</p><p>warning before the 1 Sept outbreak survey. Risk turned High on <b class="num">5 Aug</b> for all <b class="num">8 of 8</b> sowing dates tested (25 Jun to 16 Jul).</p></div>
+      <div class="tile"><span class="k">CONTROL SEASON</span><p><b class="num">2024: 0 High days</b> with the same rule and field, so it does not alarm every monsoon.</p>
+        <p class="muted" style="font-size:var(--small-size)">Honest limits: one outbreak event; rule thresholds are provisional until checked against the MP yellow mosaic paper.</p></div>
+    </div>
+    <figure class="reveal" style="margin:0">
+      <div class="chart" id="chart" role="img" aria-label="Daily yellow mosaic risk, 20 July to 5 September 2025. Crosses High on 5 August."></div>
+      <div class="axis num"><span>20 Jul 2025</span><span>Daily yellow mosaic risk · dashed line = High (70)</span><span>5 Sept</span></div>
+    </figure>
+  </div>
+</section>
+
+<!-- 6. Satellite -->
+<section class="slide" aria-label="Satellite scout">
+  <div class="slide-content split">
+    <div style="display:flex;flex-direction:column;gap:var(--content-gap)">
+      <p class="eyebrow reveal">Proof 2 · Sentinel-2 as a scout, not a judge</p>
+      <h2 class="reveal">Each 10 m cell is compared with its own field and its own history.</h2>
+      <ul class="bullet-list reveal">
+        <li>Demo field, scene <b class="num">1 Aug 2025</b>: <b class="num">27 of 69</b> cells flagged, one compact patch of <b class="num">0.67 acre</b>.</li>
+        <li>Cells on the field edge are never flagged: they mix in the neighbour's land.</li>
+        <li>Monsoon clouds left only <b class="num">4</b> clear scenes in Jul to Sep 2025. That is why the farmer's walk confirms what the satellite suggests.</li>
+      </ul>
+    </div>
+    <div class="reveal" style="display:grid;place-items:center"><div class="gridfig" id="gridfig" role="img" aria-label="Field grid with the lower right patch flagged"></div></div>
+  </div>
+</section>
+
+<!-- 7. Evidence -->
+<section class="slide" aria-label="Evidence voting">
+  <div class="slide-content split">
+    <div style="display:flex;flex-direction:column;gap:var(--content-gap)">
+      <p class="eyebrow reveal">Trust · every signal votes</p>
+      <h2 class="reveal">No single signal decides. Doubt sends a human.</h2>
+      <ul class="bullet-list reveal">
+        <li>Photos + weather + satellite only: <span class="chip medium">Medium 66%</span> → Drone Didi checks first</li>
+        <li>Add the farmer's "yes, whiteflies" and trap counts: <span class="chip high">High 77%</span> → zone-only spray</li>
+        <li>Patch in a low spot: spray blocked, waterlogging checked first</li>
+        <li>Always "shak" (suspected), never a certain diagnosis</li>
+      </ul>
+    </div>
+    <div class="bars reveal" aria-label="Signal shares in the demo case">
+      <span>Photo AI</span><span class="bar"><b style="width:100%"></b></span><span class="num">22%</span>
+      <span>Sticky traps</span><span class="bar"><b style="width:78%"></b></span><span class="num">17%</span>
+      <span>Farmer answers</span><span class="bar"><b style="width:78%"></b></span><span class="num">17%</span>
+      <span>Weather</span><span class="bar"><b style="width:39%"></b></span><span class="num">8%</span>
+      <span>ICAR advisory</span><span class="bar"><b style="width:39%"></b></span><span class="num">8%</span>
+      <span>Crop stage</span><span class="bar"><b class="g" style="width:13%"></b></span><span class="num">3%</span>
+      <span>Satellite</span><span class="bar"><b class="g" style="width:13%"></b></span><span class="num">3%</span>
+    </div>
+  </div>
+</section>
+
+<!-- 8. Generative AI -->
+<section class="slide dark" aria-label="Generative AI">
+  <div class="slide-content">
+    <p class="eyebrow reveal">Use of generative AI</p>
+    <h2 class="reveal">AI where it is strong; rules and sources where farmers need certainty.</h2>
+    <div class="grid reveal">
+      <div class="tile"><span class="k">VISION LLM</span><p>Closed label list, few-shot Indian reference photos, symptoms written before the label. Test and calibration harness for SoyNet and MH-SoyaHealthVision; accuracy {{photo_accuracy}} once run.</p></div>
+      <div class="tile"><span class="k">COST AWARE</span><p>Fast model first, stronger model only when unsure. Retries only on transient errors. Budget tracked per session.</p></div>
+      <div class="tile"><span class="k">VOICE IN HINDI</span><p>One decision per prompt, 9 repeats, 0 reaches a human. Money is spent only after a key press.</p></div>
+      <div class="tile"><span class="k">NO INVENTED DOSES</span><p>The model picks a cause; the dose comes only from the ICAR-NSRI advisory table.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 9. Drone Didi -->
+<section class="slide" aria-label="Drone Didi">
+  <div class="slide-content split">
+    <div style="display:flex;flex-direction:column;gap:var(--content-gap)">
+      <p class="eyebrow reveal">Drone Didi console · where, what, when</p>
+      <h2 class="reveal">A Namo Drone Didi gets a job she can act on at a glance.</h2>
+      <ul class="bullet-list reveal">
+        <li><b>Where:</b> the zone and a lawnmower route that never leaves it, as an ArduPilot <span class="num">.waypoints</span> file</li>
+        <li><b>What:</b> product, ml for this zone, litres of water, safety steps</li>
+        <li><b>When:</b> next morning's hours with no rain and wind under 10 km/h</li>
+      </ul>
+    </div>
+    <div class="tile reveal">
+      <span class="k">DEMO RUN, 1.58 ACRE FIELD</span>
+      <p class="big" style="font-size:clamp(2rem,6vw,4.5rem)">0.83 acre</p>
+      <p>not sprayed · <b class="num">42 ml</b> chemical saved · <b class="num">12</b> passes, <b class="num">4.9</b> min flight</p>
+    </div>
+  </div>
+</section>
+
+<!-- 10. Impact -->
+<section class="slide" aria-label="Impact and sustainability">
+  <div class="slide-content">
+    <p class="eyebrow reveal">Social impact · sustainability</p>
+    <h2 class="reveal">Less chemical, earlier action, more work for women drone operators.</h2>
+    <div class="grid reveal">
+      <div class="tile"><span class="k">FARMER</span><p>Warned before symptoms, sprays only the sick patch, gets dated geotagged proof for crop insurance.</p></div>
+      <div class="tile"><span class="k">DRONE DIDI</span><p>More farms per battery, because each job covers only the zone. Builds on the existing Namo Drone Didi scheme.</p></div>
+      <div class="tile"><span class="k">WHO PAYS</span><p>Drone Didi SHGs and FPOs, input companies, state agriculture departments, crop insurers.</p></div>
+      <div class="tile"><span class="k">PILOT</span><p><b class="num">1</b> Drone Didi, <b class="num">10</b> farmers, <b class="num">1</b> kharif season in Mandsaur.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 11. Tech -->
+<section class="slide" aria-label="Technology and integration">
+  <div class="slide-content">
+    <p class="eyebrow reveal">Cross-domain integration · built and tested</p>
+    <h2 class="reveal">Remote sensing, agronomy, telephony, generative AI and drones in one loop.</h2>
+    <div class="grid reveal">
+      <div class="tile"><span class="k">DATA</span><p>Sentinel-2 (Planetary Computer), Open-Meteo, Copernicus DEM 30 m, ICAR-NSRI advisories, Indian soybean photo sets.</p></div>
+      <div class="tile"><span class="k">STACK</span><p>FastAPI, SQLite, React + Leaflet, Twilio voice and SMS, Gemini vision, ArduPilot mission files.</p></div>
+      <div class="tile"><span class="k">QUALITY</span><p><b class="num">41</b> automated tests, <b class="num">81%</b> coverage, Hindi and English locale checks, lint clean.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 12. Close -->
+<section class="slide dark" aria-label="Close">
+  <div class="slide-content">
+    <p class="eyebrow reveal">FasalNetra</p>
+    <h1 class="reveal">The farmer only presses 1.</h1>
+    <p class="reveal" style="max-width:52ch">Live now: we call a judge's phone, walk the field link together, and send Drone Didi to spray only the patch.</p>
+  </div>
+</section>
+
+</main>
+<nav class="nav-dots" aria-label="Slides"></nav>
+<p class="keyboard-hint">← → or swipe</p>
+
+<script>
+/* Real engine output: daily yellow mosaic risk, Mandsaur 2025 (scripts/backtest_mandsaur.py). */
+const RISK = [["07-20",15],["07-21",23],["07-22",23],["07-23",18],["07-24",19],["07-25",27],["07-26",52],["07-27",34],["07-28",19],["07-29",10],["07-30",11],["07-31",12],["08-01",11],["08-02",23],["08-03",36],["08-04",51],["08-05",70],["08-06",82],["08-07",94],["08-08",95],["08-09",88],["08-10",85],["08-11",85],["08-12",86],["08-13",76],["08-14",60],["08-15",52],["08-16",52],["08-17",53],["08-18",46],["08-19",42],["08-20",42],["08-21",36],["08-22",27],["08-23",16],["08-24",11],["08-25",8],["08-26",3],["08-27",0],["08-28",5],["08-29",12],["08-30",21],["08-31",16],["09-01",13],["09-02",17],["09-03",18],["09-04",11],["09-05",3]];
+
+function buildChart() {
+  const el = document.getElementById("chart");
+  RISK.forEach(([d, v]) => {
+    const i = document.createElement("i");
+    i.style.height = Math.max(2, v) + "%";
+    i.className = v >= 70 ? "high" : v >= 40 ? "watch" : "";
+    i.title = `${d}: ${v}`;
+    el.appendChild(i);
+  });
+  const line = document.createElement("div");
+  line.className = "line70"; line.style.bottom = "70%"; el.appendChild(line);
+  [["08-05", "High"], ["09-01", "Survey"]].forEach(([d, label]) => {
+    const idx = RISK.findIndex((r) => r[0] === d);
+    const m = document.createElement("span");
+    m.className = "mark num"; m.textContent = label;
+    m.style.left = ((idx + 0.5) / RISK.length * 100) + "%";
+    m.style.bottom = d === "08-05" ? "72%" : "16%";
+    m.style.position = "absolute"; m.style.color = d === "08-05" ? "var(--alert-600)" : "var(--soil-900)";
+    el.appendChild(m);
+  });
+}
+
+function buildGrid() {
+  /* Schematic of the 5 x 14 interior grid; the flagged lower patch drawn from the 1 Aug scan pattern. */
+  const el = document.getElementById("gridfig");
+  for (let r = 0; r < 14; r++) for (let c = 0; c < 5; c++) {
+    const i = document.createElement("i");
+    if ((r >= 7 && c >= 3) || (r >= 9 && c >= 2) || (r >= 11 && c >= 1) || r >= 13) i.className = "f";
+    el.appendChild(i);
+  }
+}
+
+/* Presentation controller: keyboard, wheel, touch, dots, progress, reveal on enter. */
+class Deck {
+  constructor() {
+    this.slides = [...document.querySelectorAll(".slide")];
+    this.dots = document.querySelector(".nav-dots");
+    this.bar = document.querySelector(".progress");
+    this.index = 0;
+    this.slides.forEach((s, i) => {
+      const b = document.createElement("button");
+      b.setAttribute("aria-label", `Slide ${i + 1}: ${s.getAttribute("aria-label")}`);
+      b.addEventListener("click", () => this.go(i));
+      this.dots.appendChild(b);
+    });
+    const io = new IntersectionObserver((entries) => entries.forEach((e) => {
+      if (e.isIntersecting) { e.target.classList.add("visible"); this.setIndex(this.slides.indexOf(e.target)); }
+    }), { threshold: 0.55 });
+    this.slides.forEach((s) => io.observe(s));
+    // Fallback when IntersectionObserver is throttled (background tab, projector mirroring): use scroll position.
+    // The base CSS's overflow-x on body can make body (not the window) the scroller, so read whichever moved.
+    const pos = () => Math.max(scrollY, document.body.scrollTop, document.documentElement.scrollTop);
+    const sync = () => { const i = Math.round(pos() / innerHeight); this.reveal(i); this.setIndex(i); };
+    document.addEventListener("scroll", () => requestAnimationFrame(sync), { passive: true, capture: true });
+    sync();
+    document.addEventListener("keydown", (e) => {
+      if (["ArrowDown", "ArrowRight", "PageDown", " "].includes(e.key)) { e.preventDefault(); this.go(this.index + 1); }
+      if (["ArrowUp", "ArrowLeft", "PageUp"].includes(e.key)) { e.preventDefault(); this.go(this.index - 1); }
+      if (e.key === "Home") this.go(0);
+      if (e.key === "End") this.go(this.slides.length - 1);
+    });
+    let startY = null;
+    addEventListener("touchstart", (e) => { startY = e.touches[0].clientY; }, { passive: true });
+    addEventListener("touchend", (e) => {
+      if (startY === null) return;
+      const dy = startY - e.changedTouches[0].clientY;
+      if (Math.abs(dy) > 50) this.go(this.index + (dy > 0 ? 1 : -1));
+      startY = null;
+    });
+    this.setIndex(0);
+  }
+  reveal(i) {
+    this.slides[Math.max(0, Math.min(this.slides.length - 1, i))].classList.add("visible");
+  }
+  go(i) {
+    const n = Math.max(0, Math.min(this.slides.length - 1, i));
+    this.reveal(n);
+    this.setIndex(n);
+    const behavior = matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+    const top = this.slides[n].offsetTop;
+    document.documentElement.scrollTo({ top, behavior });   // whichever element is the scroller moves
+    document.body.scrollTo({ top, behavior });
+  }
+  setIndex(i) {
+    i = Math.max(0, Math.min(this.slides.length - 1, i));
+    this.index = i;
+    [...this.dots.children].forEach((d, k) => d.setAttribute("aria-current", String(k === i)));
+    this.bar.style.width = ((i + 1) / this.slides.length * 100) + "%";
+  }
+}
+
+document.documentElement.classList.add("js");   // without JS every slide is simply visible
+buildChart();
+buildGrid();
+new Deck();
+</script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-﻿# FasalNetra
+# FasalNetra
 
 FasalNetra is a field-level crop-risk and precision-spraying demo for soybean farmers.
 

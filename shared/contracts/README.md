@@ -1,4 +1,4 @@
-﻿# Shared contracts
+# Shared contracts
 
 Keep versioned JSON Schema or TypeScript/Python contract definitions here.
 

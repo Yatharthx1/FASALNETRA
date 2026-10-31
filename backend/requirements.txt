@@ -1,4 +1,4 @@
-﻿fastapi>=0.115,<1.0
+fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30
 pydantic-settings>=2.4
 sqlalchemy>=2.0
@@ -8,3 +8,13 @@ python-multipart>=0.0.9
 python-dotenv>=1.0
 shapely>=2.0
 pillow>=10.4
+aiosqlite>=0.20
+numpy>=2.0
+scipy>=1.13
+requests>=2.32
+rasterio>=1.4
+pystac-client>=0.8
+planetary-computer>=1.0
+google-genai>=1.0
+# optional: CLIP photo-match vote (downloads ~600 MB model on first use)
+# sentence-transformers>=3.0

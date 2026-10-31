@@ -1,0 +1,272 @@
+{
+  "source_org": "ICAR-NSRI (formerly ICAR-IISR), Indore",
+  "advisory_season": "Kharif 2025",
+  "verified_against_label": false,
+  "note": "Doses copied from published ICAR-NSRI advisories as reported in the sources below. Check the product label before any real spray; MP state advisory gives 200 ml/ha for the thiamethoxam + lambda-cyhalothrin pre-mix where NSRI gives 125 ml/ha.",
+  "water_l_per_ha": {
+    "knapsack": 500,
+    "drone": 25
+  },
+  "knapsack_tank_l": 15,
+  "rows": [
+    {
+      "id": "ymv_whitefly",
+      "cause": "yellow_mosaic",
+      "name_hi": "peela mosaic (safed makkhi se)",
+      "name_en": "Yellow mosaic virus (spread by whitefly)",
+      "vector": "whitefly",
+      "symptoms": [
+        "yellow-green mosaic patches on leaves",
+        "whiteflies on leaf underside",
+        "stunted plants in patches"
+      ],
+      "vulnerable_das": [
+        20,
+        60
+      ],
+      "action_threshold": "First infected plants seen, or whiteflies on yellow sticky traps",
+      "cultural": [
+        "Uproot and destroy infected plants",
+        "Put up yellow sticky traps"
+      ],
+      "chemical": [
+        {
+          "product": "Thiamethoxam 12.6% + Lambda-cyhalothrin 9.5% ZC",
+          "dose_per_ha": 125,
+          "unit": "ml"
+        },
+        {
+          "product": "Betacyfluthrin + Imidacloprid",
+          "dose_per_ha": 350,
+          "unit": "ml"
+        },
+        {
+          "product": "Acetamiprid 25% + Bifenthrin 25% WG",
+          "dose_per_ha": 250,
+          "unit": "g"
+        }
+      ],
+      "repeat_after_days": [
+        10,
+        15
+      ],
+      "sources": [
+        "https://www.global-agriculture.com/farming-agriculture/ymv-smv-virus-threat-in-soybean-national-soybean-research-institute-indore-issues-control-advisory/",
+        "https://www.global-agriculture.com/farming-agriculture/top-recommended-insecticides-to-control-leaf-eating-caterpillars-whitefly-stem-borers-in-soybean/"
+      ],
+      "symptoms_hi": [
+        "पत्तों पर पीले-हरे धब्बे (मोज़ेक)",
+        "पत्तों के नीचे सफ़ेद मक्खी",
+        "कुछ हिस्सों में पौधे छोटे रह गए"
+      ]
+    },
+    {
+      "id": "girdle_beetle",
+      "cause": "girdle_beetle",
+      "name_hi": "chakra bhrung (girdle beetle)",
+      "name_en": "Girdle beetle",
+      "vector": null,
+      "symptoms": [
+        "two ring cuts on stem or leaf stalk",
+        "leaves above the ring wilt and dry"
+      ],
+      "vulnerable_das": [
+        25,
+        60
+      ],
+      "action_threshold": "Ring-cut stems seen in the field",
+      "cultural": [
+        "Pull out and destroy cut plant parts early"
+      ],
+      "chemical": [
+        {
+          "product": "Thiacloprid 21.7% SC",
+          "dose_per_ha": 750,
+          "unit": "ml"
+        },
+        {
+          "product": "Tetraniliprole 18.18% SC",
+          "dose_per_ha": 250,
+          "unit": "ml"
+        },
+        {
+          "product": "Chlorantraniliprole 18.5% SC",
+          "dose_per_ha": 150,
+          "unit": "ml"
+        },
+        {
+          "product": "Emamectin benzoate 1.9% EC",
+          "dose_per_ha": 425,
+          "unit": "ml"
+        },
+        {
+          "product": "Profenofos 50% EC",
+          "dose_per_ha": 1000,
+          "unit": "ml"
+        }
+      ],
+      "repeat_after_days": null,
+      "sources": [
+        "https://www.global-agriculture.com/farming-agriculture/girdle-beetle-in-soybean-symptoms-recommended-agrochemicals-and-precautions-kharif-2025/"
+      ],
+      "symptoms_hi": [
+        "तने या डंठल पर दो गोल कटाव",
+        "कटाव के ऊपर के पत्ते मुरझाकर सूखते हैं"
+      ]
+    },
+    {
+      "id": "defoliators",
+      "cause": "chewing_damage",
+      "name_hi": "patti khane wali illi (semilooper / tambaku illi)",
+      "name_en": "Leaf-eating caterpillars (semilooper, tobacco caterpillar)",
+      "vector": null,
+      "symptoms": [
+        "holes or skeletonised leaves",
+        "green looping caterpillars",
+        "leaves eaten from the edge"
+      ],
+      "vulnerable_das": [
+        15,
+        70
+      ],
+      "action_threshold": "Caterpillars or fresh leaf damage on many plants",
+      "cultural": [
+        "Bird perches (T-shaped sticks) in the field"
+      ],
+      "chemical": [
+        {
+          "product": "Chlorantraniliprole 18.5% SC",
+          "dose_per_ha": 150,
+          "unit": "ml"
+        },
+        {
+          "product": "Emamectin benzoate 1.9% EC",
+          "dose_per_ha": 425,
+          "unit": "ml"
+        },
+        {
+          "product": "Lambda-cyhalothrin 4.9% SC",
+          "dose_per_ha": 300,
+          "unit": "ml"
+        },
+        {
+          "product": "Quinalphos 25% EC",
+          "dose_per_ha": 1000,
+          "unit": "ml"
+        }
+      ],
+      "repeat_after_days": null,
+      "sources": [
+        "https://www.en.krishakjagat.org/?p=20578"
+      ],
+      "symptoms_hi": [
+        "पत्तों में छेद या जाली जैसे पत्ते",
+        "हरी इल्ली, कमर मोड़कर चलती",
+        "किनारे से खाए हुए पत्ते"
+      ]
+    },
+    {
+      "id": "aerial_blight",
+      "cause": "fungal",
+      "name_hi": "patton ka jhulsa (Rhizoctonia aerial blight)",
+      "name_en": "Rhizoctonia aerial blight (fungal)",
+      "vector": null,
+      "symptoms": [
+        "water-soaked brown patches on leaves",
+        "leaves stuck together with web-like growth",
+        "starts in dense, humid parts of the field"
+      ],
+      "vulnerable_das": [
+        35,
+        75
+      ],
+      "action_threshold": "First symptoms seen after humid, rainy spell",
+      "cultural": [
+        "Avoid dense sowing",
+        "Drain standing water"
+      ],
+      "chemical": [
+        {
+          "product": "Fluxapyroxad 167 g/l + Pyraclostrobin 333 g/l SC",
+          "dose_per_ha": 300,
+          "unit": "g"
+        },
+        {
+          "product": "Pyraclostrobin 133 g/l + Epoxiconazole 50 g/l SE",
+          "dose_per_ha": 750,
+          "unit": "ml"
+        },
+        {
+          "product": "Pyraclostrobin 20% WG",
+          "dose_per_ha": 375,
+          "unit": "g"
+        }
+      ],
+      "repeat_after_days": null,
+      "sources": [
+        "https://www.global-agriculture.com/farming-agriculture/recommended-fungicide-spray-for-rhizoctonia-aerial-blight-in-soybean-advisory-by-icar-nsi-indore/"
+      ],
+      "symptoms_hi": [
+        "पत्तों पर भूरे, पानी-भरे धब्बे",
+        "पत्ते जाले जैसी फफूंद से चिपके",
+        "घने, नमी वाले हिस्से से शुरू"
+      ]
+    },
+    {
+      "id": "water_stress",
+      "cause": "water_stress",
+      "name_hi": "paani ki kami / jal bharav",
+      "name_en": "Water stress or waterlogging (not a pest)",
+      "vector": null,
+      "symptoms": [
+        "wilting in the afternoon",
+        "patch follows slope or low spot",
+        "whole patch yellows evenly"
+      ],
+      "vulnerable_das": [
+        0,
+        100
+      ],
+      "action_threshold": "Do not spray pesticide",
+      "cultural": [
+        "Irrigate if dry spell, or open drainage channel if waterlogged"
+      ],
+      "chemical": [],
+      "repeat_after_days": null,
+      "sources": [],
+      "symptoms_hi": [
+        "दोपहर में पौधे मुरझाते हैं",
+        "धब्बा ढलान या नीची जगह के साथ",
+        "पूरा हिस्सा एक जैसा पीला"
+      ]
+    },
+    {
+      "id": "nitrogen_deficiency",
+      "cause": "nutrient",
+      "name_hi": "khaad ki kami",
+      "name_en": "Nutrient shortage (not a pest)",
+      "vector": null,
+      "symptoms": [
+        "older leaves pale yellow evenly",
+        "whole field, not a patch",
+        "no insects or spots"
+      ],
+      "vulnerable_das": [
+        0,
+        100
+      ],
+      "action_threshold": "Do not spray pesticide",
+      "cultural": [
+        "Follow Soil Health Card dose; ask KVK"
+      ],
+      "chemical": [],
+      "repeat_after_days": null,
+      "sources": [],
+      "symptoms_hi": [
+        "पुराने पत्ते एक जैसे हल्के पीले",
+        "पूरा खेत, एक हिस्सा नहीं",
+        "कोई कीड़ा या धब्बा नहीं"
+      ]
+    }
+  ]
+}
