@@ -10,7 +10,12 @@ os.environ.update({
     "UPLOAD_DIR": str(_TMP / "uploads"),
     "WAYPOINTS_DIR": str(_TMP / "waypoints"),
     "VISION_PROVIDER": "mock",
-    "TWILIO_ACCOUNT_SID": "",
+    "TWILIO_ACCOUNT_SID": "",          # never place real calls/SMS from tests, whatever .env says
+    "TWILIO_AUTH_TOKEN": "",
+    "TWILIO_PHONE_NUMBER": "",
+    "DEMO_FARMER_PHONE": "+919876543210",
+    "PUBLIC_BASE_URL": "http://test",
+    "POSTGRES_URL": "",
     "DEMO_MODE": "true",
 })
 
@@ -39,7 +44,10 @@ def jpeg(sharp: bool = True) -> bytes:
 @pytest_asyncio.fixture
 async def client():
     from backend.app.db.database import Base, engine
+    from backend.app import main
     from backend.app.main import create_app, lifespan
+
+    main._ready = False   # tables are dropped below, so setup must run again
 
     from backend.app.db import session as ivr_db
 

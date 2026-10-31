@@ -1,7 +1,7 @@
 import asyncio
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from backend.app.api.deps import DbDep
 from backend.app.core.config import settings
@@ -15,7 +15,16 @@ HEARTBEAT_S = 25
 
 
 @router.get("/events", response_model=list[EventOut])
-async def list_events(db: DbDep, case_id: int | None = None, limit: int = Query(100, ge=1, le=500)) -> list[EventOut]:
+async def list_events(db: DbDep, case_id: int | None = None, limit: int = Query(100, ge=1, le=500),
+                      after: int | None = Query(None, ge=0)) -> list[EventOut]:
+    """Latest events, or (after=id) the ones newer than id, oldest first: the frontend polls this."""
+    if after is not None:
+        if after > ((await db.execute(select(func.max(Event.id)))).scalar() or 0):
+            after = 0   # ids restarted (demo reset on SQLite): resend everything since the reset
+        q = select(Event).where(Event.id > after).order_by(Event.id).limit(limit)
+        if case_id is not None:
+            q = q.where(Event.case_id == case_id)
+        return list((await db.execute(q)).scalars().all())
     q = select(Event).order_by(Event.id.desc()).limit(limit)
     if case_id is not None:
         q = q.where(Event.case_id == case_id)

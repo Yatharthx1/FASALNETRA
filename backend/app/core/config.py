@@ -17,7 +17,9 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_debug: bool = True
     api_v1_prefix: str = "/api/v1"
+    # Local: SQLite file. Vercel: Postgres (Neon) URL from the Marketplace integration, any of these spellings.
     database_url: str = f"sqlite+aiosqlite:///{(REPO_ROOT / 'data' / 'fasalnetra.db').as_posix()}"
+    postgres_url: str = ""
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
     # Demo scenario (PRD): Mandsaur, 15 Aug 2025, crop 40 days old
@@ -72,6 +74,22 @@ class Settings(BaseSettings):
     didi_tank_l: float = 10.0
     didi_base_lon: float = 75.1180
     didi_base_lat: float = 24.0990
+
+    @property
+    def is_postgres(self) -> bool:
+        return self._db_url.startswith(("postgres://", "postgresql"))
+
+    @property
+    def _db_url(self) -> str:
+        return self.postgres_url if self.database_url.startswith("sqlite") and self.postgres_url else self.database_url
+
+    def db_url(self, *, sync: bool) -> str:
+        """Driver-specific URL. Postgres uses psycopg 3 for both the async case engine and the sync IVR engine."""
+        url = self._db_url
+        if self.is_postgres:
+            rest = url.split("://", 1)[1]
+            return f"postgresql+psycopg://{rest}"
+        return url.replace("+aiosqlite", "") if sync else url
 
     @property
     def walk_link_base(self) -> str:

@@ -55,19 +55,25 @@ export const api = {
   reset: () => post<AppEvent>("/demo/reset"),
 };
 
+const POLL_MS = 2000;
+
+/** Live event feed by polling (works through Vercel's rewrite to the API, which cannot carry WebSockets). */
 export function eventsSocket(onEvent: (e: AppEvent) => void): () => void {
-  let ws: WebSocket | null = null;
   let closed = false;
-  let retry: ReturnType<typeof setTimeout>;
-  const open = () => {
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    ws = new WebSocket(`${proto}://${location.host}${BASE}/ws/events`);
-    ws.onmessage = (m) => {
-      const e = JSON.parse(m.data) as AppEvent;
-      if (e.type !== "heartbeat") onEvent(e);
-    };
-    ws.onclose = () => { if (!closed) retry = setTimeout(open, 2000); };
+  let last: number | null = null;   // newest event id seen; null until the first poll sets the baseline
+  let timer: ReturnType<typeof setTimeout>;
+  const poll = async () => {
+    try {
+      if (last === null) {
+        const latest = await req<AppEvent[]>("/events?limit=1");
+        last = latest[0]?.id ?? 0;
+      } else {
+        const fresh = await req<AppEvent[]>(`/events?after=${last}`);
+        for (const e of fresh) { last = Math.max(last, e.id ?? last); if (!closed) onEvent(e); }
+      }
+    } catch { /* offline or API restarting: try again next tick */ }
+    if (!closed) timer = setTimeout(poll, POLL_MS);
   };
-  open();
-  return () => { closed = true; clearTimeout(retry); ws?.close(); };
+  poll();
+  return () => { closed = true; clearTimeout(timer); };
 }

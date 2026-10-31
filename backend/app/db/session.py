@@ -1,12 +1,14 @@
 from collections.abc import Generator
 from pathlib import Path
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from backend.app.core.config import settings
+from backend.app.db.database import PG_ARGS
 
-# Same database file as the async case engine (db/database.py), opened with the sync driver
-SYNC_DATABASE_URL = settings.database_url.replace("+aiosqlite", "")
+# Same database as the async case engine (db/database.py), opened with the sync driver
+SYNC_DATABASE_URL = settings.db_url(sync=True)
 
 # Ensure sqlite directory exists if local sqlite path is used
 if SYNC_DATABASE_URL.startswith("sqlite"):
@@ -17,7 +19,7 @@ if SYNC_DATABASE_URL.startswith("sqlite"):
         connect_args={"check_same_thread": False},
     )
 else:
-    engine = create_engine(SYNC_DATABASE_URL)
+    engine = create_engine(SYNC_DATABASE_URL, **PG_ARGS)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -39,7 +41,7 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
 
     # Lightweight auto-migration for SQLite development database
-    if settings.database_url.startswith("sqlite"):
+    if not settings.is_postgres:
         with engine.connect() as conn:
             res = conn.exec_driver_sql("PRAGMA table_info(farmers)").fetchall()
             existing_cols = {row[1] for row in res}

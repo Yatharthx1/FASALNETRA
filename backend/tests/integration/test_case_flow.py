@@ -132,3 +132,16 @@ async def test_unsure_result_calls_the_farmer_to_offer_drone_didi(client):
     await client.post(f"{API}/ivr/simulate/registered", json={"phone": "+919876543210", "digits": "1"})
     job = [j for j in (await client.get(f"{API}/didi/jobs")).json() if j["case_id"] == cid][0]
     assert job["mode"] == "verify_then_spray" and job["status"] == "new"
+
+
+async def test_event_polling_returns_only_newer_events_and_survives_a_reset(client):
+    await _case(client)
+    last = (await client.get(f"{API}/events", params={"limit": 1})).json()[0]["id"]
+    assert (await client.get(f"{API}/events", params={"after": last})).json() == []
+    await _case(client)
+    fresh = (await client.get(f"{API}/events", params={"after": last})).json()
+    assert [e["type"] for e in fresh] == ["case_created"]
+
+    await client.post(f"{API}/demo/reset")   # SQLite may restart ids below `last`
+    after_reset = (await client.get(f"{API}/events", params={"after": fresh[-1]["id"]})).json()
+    assert "demo_reset" in [e["type"] for e in after_reset]
