@@ -30,7 +30,8 @@ def _result_prompt(context: dict[str, Any]) -> dict[str, Any]:
     if context["action"] == "advise_spray":
         spray = context.get("spray")
         dose = f" सिर्फ उसी हिस्से में {spray['quantity']:g} {spray['unit']} दवा लगेगी, पूरे खेत में नहीं।" if spray else ""
-        text = f"{head}{dose} ड्रोन दीदी छिड़काव बुक करने के लिए 1 दबाइए। दोबारा सुनने के लिए 9 दबाइए।"
+        advice = f" {context['say_hi']}" if context.get("say_hi") else ""   # crop advisory (advisory/writer.py)
+        text = f"{head}{advice}{dose} ड्रोन दीदी छिड़काव बुक करने के लिए 1 दबाइए। दोबारा सुनने के लिए 9 दबाइए।"
     elif context["action"] == "didi_verify":
         # Not sure yet: no percentage, just the suspicion and the offer to send Drone Didi
         text = (f"नमस्ते! आपकी फोटो मिल गई। आपके खेत के {where} में {context['name_hi']} का शक है, पर अभी पक्का नहीं कह सकते। "

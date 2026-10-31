@@ -27,6 +27,7 @@ export default function FarmerResult({ kase, field, onCase }: { kase: Case; fiel
   const pest = Boolean(ev?.plan?.spray);
   const offerDidi = Boolean(ev && pest && (!sure || ev.action === "didi_verify"));
   const message = !ev ? "" :
+    ev.advisory ? ev.advisory.advisory_hi :      // high confidence: the crop advisory (backend advisory/writer.py)
     !pest ? t("result.no_pesticide", { cause: causeName(ev.cause) }) :
       sure ? t("result.sure", { cause: causeName(ev.cause), pct: Math.round(ev.confidence * 100), acres: fmt(kase.zone_acres ?? 0, 2) }) :
         t("result.unsure", { cause: causeName(ev.cause) });   // the percentage is shown only when we are sure
@@ -88,6 +89,7 @@ export default function FarmerResult({ kase, field, onCase }: { kase: Case; fiel
           <p className="body-3 num">{ev.plan.spray.product}: {fmt(ev.plan.spray.quantity)} {ev.plan.spray.unit} · {t("result.only_patch")}</p>
         )}
         {ev.plan && <p className="caption-5">{t("ev.source", { source: ev.plan.source })}</p>}
+        {ev.advisory && <p className="caption-5">{t(ev.advisory.source === "llm" ? "result.advisory_llm" : "result.advisory_template")}</p>}
       </section>
 
       {error && <p className="notice notice-error" role="alert">{error}</p>}

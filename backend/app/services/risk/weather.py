@@ -112,9 +112,6 @@ def daily_features(hourly: dict) -> list[dict]:
         raw_g = hourly.get("wind_gusts_10m")
         G = [raw_g[i] if raw_g and raw_g[i] is not None else W[k] * 1.35 for k, i in enumerate(ix)]
 
-        # Soil moisture (if provided)
-        raw_sm = hourly.get("soil_moisture_0_to_7cm")
-        SM = [raw_sm[i] for i in ix if raw_sm and raw_sm[i] is not None]
 
         # VPD (from API or derived from T and RH)
         raw_vpd = hourly.get("vapour_pressure_deficit")

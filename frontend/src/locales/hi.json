@@ -187,5 +187,7 @@
   "walk.gps.live": "GPS ±{m} मी · 5 बार/सेकंड",
   "walk.where.on_field": "आप अपने खेत (खसरा {khasra}) में हैं",
   "walk.where.near_field": "खेत {m} मीटर दूर है",
-  "walk.where.away": "आप खेत से {km} किलोमीटर दूर हैं। खेत पर जाकर लिंक खोलिए।"
+  "walk.where.away": "आप खेत से {km} किलोमीटर दूर हैं। खेत पर जाकर लिंक खोलिए।",
+  "result.advisory_llm": "सलाह AI ने ICAR की जानकारी से लिखी, दवा की मात्रा ICAR तालिका से",
+  "result.advisory_template": "सलाह ICAR तालिका और फसल की अवस्था से"
 }

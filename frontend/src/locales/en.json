@@ -187,5 +187,7 @@
   "walk.gps.live": "GPS ±{m} m · 5 per second",
   "walk.where.on_field": "You are in your field (khasra {khasra})",
   "walk.where.near_field": "Your field is {m} m away",
-  "walk.where.away": "You are {km} km from your field. Open the link at the field."
+  "walk.where.away": "You are {km} km from your field. Open the link at the field.",
+  "result.advisory_llm": "Advice written by AI from ICAR facts; dose from the ICAR table",
+  "result.advisory_template": "Advice from the ICAR table and crop stage"
 }

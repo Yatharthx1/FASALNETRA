@@ -20,6 +20,7 @@ from backend.app.services import (
     fields,
     vision,
 )
+from backend.app.services.advisory import knowledge, writer
 from backend.app.services.communications import ivr_service
 from backend.app.services.communications.registered_state_machine import (
     get_registered_flow_config,
@@ -88,7 +89,8 @@ def result_context(case: Case) -> dict | None:
         return None
     spray = (ev.get("plan") or {}).get("spray")
     return {"name_hi": CAUSE_HI.get(ev["cause"], ev["name_hi"]), "pct": round(ev["confidence"] * 100), "acres": case.zone_acres,
-            "action": ev["action"], "spray": {"quantity": spray["quantity"], "unit": spray["unit"]} if spray else None}
+            "action": ev["action"], "spray": {"quantity": spray["quantity"], "unit": spray["unit"]} if spray else None,
+            "say_hi": (ev.get("advisory") or {}).get("say_hi")}
 
 
 async def ivr_context(db: AsyncSession, phone: str) -> dict | None:
@@ -311,6 +313,7 @@ async def build_evidence(db: AsyncSession, case: Case) -> Case:
                         photo_expert=_expert_vote(case.photos), season=seasonality.season_vote(fields.today()))
     ev["savings"] = advisory.savings(f.area_acres, case.zone_acres or 0, ev["cause"],
                                      settings.pesticide_price_inr_per_unit)
+    await asyncio.to_thread(_route, ev, f, das, case.zone_acres or scan["summary"]["flagged_acres"])
     try:
         ev["combined_advisory"] = await asyncio.to_thread(fields.combined_advisory, f)
     except Exception:
@@ -329,6 +332,27 @@ async def build_evidence(db: AsyncSession, case: Case) -> Case:
     if not await asyncio.to_thread(live_holding, case.field.farmer.phone):
         await result_call(db, case)
     return case
+
+
+def _route(ev: dict, f: Field, das: int, zone_acres: float) -> None:
+    """High confidence on a crop we have a knowledge pack for: our advisory goes to the farmer. Anything less, or
+    a crop without a pack (no vetted doses for it): Drone Didi checks the field first."""
+    if not knowledge.supported(f.crop):
+        if ev["action"] in ("advise_spray", "advise_no_pesticide"):
+            ev.update(action="didi_verify", spray_allowed=False)
+        ev.update(route="drone_didi", route_reason=f"no knowledge pack for {f.crop}")
+        return
+    if ev["level"] != "high":
+        ev.update(route="drone_didi" if ev["action"] == "didi_verify" else "expert",
+                  route_reason=f"confidence {ev['level']}")
+        return
+    try:
+        window = fields.spray_window(f)
+    except (OSError, ValueError, KeyError):
+        window = None
+    facts = knowledge.build_facts(crop=f.crop, evidence=ev, das=das, zone_acres=zone_acres, field_acres=f.area_acres,
+                                  spray_window=window, profile=field_profile(f.farmer.phone))
+    ev.update(route="advisory", advisory=writer.write(facts))
 
 
 async def book_didi(db: AsyncSession, case: Case) -> DidiJob:

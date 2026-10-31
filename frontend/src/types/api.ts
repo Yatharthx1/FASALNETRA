@@ -62,6 +62,9 @@ export interface Evidence {
   alternatives: { cause: string; share: number }[];
   plan: { cause: Cause; name_hi: string; source: string; cultural: string[]; spray: SprayPlan | null; zone_acres: number } | null;
   savings: { acres_not_sprayed: number; chemical_saved: number; unit: string | null; rupees_saved: number | null };
+  /** advisory: high confidence on a crop with a knowledge pack; drone_didi / expert: she or KVK checks first */
+  route?: "advisory" | "drone_didi" | "expert"; route_reason?: string;
+  advisory?: { say_hi: string; advisory_hi: string; advisory_en: string; source: "llm" | "template"; model?: string; note?: string };
 }
 
 export interface Case {
