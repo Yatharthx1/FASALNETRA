@@ -41,6 +41,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ivr", tags=["ivr"])
 
 
+async def _case_context(phone: str) -> dict | None:
+    """The farmer's latest case result, so the result call speaks the real cause, zone and dose."""
+    async with database.SessionLocal() as adb:
+        return await cases.ivr_context(adb, phone)
+
+
 async def _apply_to_case(phone: str, step: str, digits: str | None, action: str) -> None:
     """Hand a registered-flow key press to the farmer's open crop case (SMS walk link, Drone Didi booking)."""
     async with database.SessionLocal() as adb:
@@ -280,7 +286,8 @@ async def ivr_registered_start(
     db.refresh(session)
 
     action_url = f"{settings.public_base_url}{settings.api_v1_prefix}/ivr/registered/step?call_sid={session.call_sid}"
-    twiml = generate_twiml_for_registered_step(active_flow, initial_step, farmer, action_url)
+    twiml = generate_twiml_for_registered_step(active_flow, initial_step, farmer, action_url,
+                                               context=await _case_context(farmer_phone))
     return Response(content=twiml, media_type="application/xml")
 
 
@@ -324,7 +331,8 @@ async def ivr_registered_step(
 
     action_url = f"{settings.public_base_url}{settings.api_v1_prefix}/ivr/registered/step?call_sid={session.call_sid}"
     reprompt_msg = step_result["message"] if step_result["reprompt"] else None
-    twiml = generate_twiml_for_registered_step(session.flow, session.current_step, farmer, action_url, reprompt_msg)
+    twiml = generate_twiml_for_registered_step(session.flow, session.current_step, farmer, action_url, reprompt_msg,
+                                               context=await _case_context(session.phone))
     return Response(content=twiml, media_type="application/xml")
 
 
@@ -434,11 +442,12 @@ async def ivr_simulate_registered(
         message = step_result["message"]
 
     farmer = db.query(Farmer).filter(Farmer.phone == phone).first()
-    return registered_prompt(phone, session.flow, session.current_step, farmer, message)
+    return registered_prompt(phone, session.flow, session.current_step, farmer, message, await _case_context(phone))
 
 
-def registered_prompt(phone: str, flow: str, step: str, farmer, message: str = "") -> IVRRegisteredSimulateResponse:
-    cfg = get_registered_flow_config(flow, step, farmer)
+def registered_prompt(phone: str, flow: str, step: str, farmer, message: str = "",
+                      context: dict | None = None) -> IVRRegisteredSimulateResponse:
+    cfg = get_registered_flow_config(flow, step, farmer, context)
     return IVRRegisteredSimulateResponse(
         phone=phone,
         flow=flow,

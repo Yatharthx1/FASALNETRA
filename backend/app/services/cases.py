@@ -29,6 +29,9 @@ from backend.app.services.vision import knn
 TARGET_CELLS = 3          # grid cells the farmer is asked to walk to, worst first
 DAMAGE_SEVERITY = 2       # PRD: zone = spots with severity >= 2
 LEAF_KINDS = {"leaf_top", "leaf_under", "chewed"}
+# Spoken cause names for the IVR (same as frontend/src/locales/hi.json "cause.*")
+CAUSE_HI = {"yellow_mosaic": "पीला मोज़ेक", "fungal": "पत्तों का झुलसा", "chewing_damage": "इल्ली का नुकसान",
+            "water_stress": "पानी की कमी या जलभराव", "nutrient": "खाद की कमी"}
 
 
 class CaseNotFound(LookupError):
@@ -61,7 +64,22 @@ async def create(db: AsyncSession, field_id: str) -> Case:
     return case
 
 
-def _start_ivr_call(owner: FieldOwner, flow: str) -> dict:
+def result_context(case: Case) -> dict | None:
+    """What the IVR result call says about this case: cause, confidence, zone and dose, all from the evidence."""
+    ev = case.evidence
+    if not ev:
+        return None
+    spray = (ev.get("plan") or {}).get("spray")
+    return {"name_hi": CAUSE_HI.get(ev["cause"], ev["name_hi"]), "pct": round(ev["confidence"] * 100), "acres": case.zone_acres,
+            "action": ev["action"], "spray": {"quantity": spray["quantity"], "unit": spray["unit"]} if spray else None}
+
+
+async def ivr_context(db: AsyncSession, phone: str) -> dict | None:
+    case = await open_case_for_phone(db, phone)
+    return result_context(case) if case else None
+
+
+def _start_ivr_call(owner: FieldOwner, flow: str, context: dict | None = None) -> dict:
     """Place a registered-farmer call (warning / result) through the IVR in routes/ivr.py; return it with its first prompt."""
     db = IvrSessionLocal()
     try:
@@ -73,7 +91,7 @@ def _start_ivr_call(owner: FieldOwner, flow: str) -> dict:
         farmer.active_flow = flow
         db.commit()
         call = ivr_service.start_call(db, phone, flow)
-        call["prompt"] = get_registered_flow_config(flow, call["step"], farmer)
+        call["prompt"] = get_registered_flow_config(flow, call["step"], farmer, context)
         return call
     finally:
         db.close()
@@ -90,7 +108,7 @@ async def warning_call(db: AsyncSession, case: Case) -> dict:
 async def result_call(db: AsyncSession, case: Case) -> dict:
     if not case.evidence:
         raise CaseStateError("no evidence yet")
-    call = await asyncio.to_thread(_start_ivr_call, case.field.farmer, "result")
+    call = await asyncio.to_thread(_start_ivr_call, case.field.farmer, "result", result_context(case))
     await emit(db, "call_placed", case.id, kind="result", simulated=not settings.twilio_enabled)
     return call
 

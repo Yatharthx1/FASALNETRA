@@ -77,7 +77,7 @@ def generate_twiml_for_step(
 
     # If no key was pressed within timeout, Twilio continues past Gather
     # We redirect to the same action_url without digits to trigger the reprompt handler
-    response.redirect(f"{action_url}?timeout=1", method="POST")
+    response.redirect(f"{action_url}{'&' if '?' in action_url else '?'}timeout=1", method="POST")
 
     return str(response)
 
@@ -88,10 +88,11 @@ def generate_twiml_for_registered_step(
     farmer: Any,
     action_url: str,
     reprompt_message: str | None = None,
+    context: dict[str, Any] | None = None,
 ) -> str:
     """Generates TwiML for registered farmer flows (safe reassurance, warning, result, followup)."""
     response = VoiceResponse()
-    step_cfg = get_registered_flow_config(flow, step, farmer)
+    step_cfg = get_registered_flow_config(flow, step, farmer, context)
 
     if reprompt_message:
         response.say(reprompt_message, language=settings.ivr_default_language, voice="Polly.Aditi")
@@ -122,7 +123,7 @@ def generate_twiml_for_registered_step(
         gather.say(step_cfg["prompt_text"], language=settings.ivr_default_language, voice="Polly.Aditi")
 
     response.append(gather)
-    response.redirect(f"{action_url}?timeout=1", method="POST")
+    response.redirect(f"{action_url}{'&' if '?' in action_url else '?'}timeout=1", method="POST")
     return str(response)
 
 

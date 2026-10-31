@@ -3,6 +3,9 @@ import pytest
 from shapely.geometry import Polygon, mapping
 
 from backend.app.services import advisory, communications, evidence, missions
+from backend.app.services.communications.registered_state_machine import (
+    get_registered_flow_config,
+)
 from backend.app.services.mapping import geo
 
 YMV_WEATHER = {"yellow_mosaic": 0.95, "fungal": 0.39, "chewing_damage": 0.45}
@@ -80,6 +83,29 @@ def test_wording_is_never_certain():
     assert e["wording"] == "shak"
 
 
+# --- IVR result call -------------------------------------------------------
+
+def _ctx(action, spray=None):
+    return {"name_hi": "पीला मोज़ेक", "pct": 72, "acres": 0.43, "action": action, "spray": spray}
+
+
+def test_result_call_speaks_case_cause_zone_and_dose():
+    cfg = get_registered_flow_config("result", "result_prompt",
+                                     context=_ctx("advise_spray", {"quantity": 52.0, "unit": "ml"}))
+    assert "72 प्रतिशत पीला मोज़ेक का शक" in cfg["prompt_text"]
+    assert "0.4 एकड़" in cfg["prompt_text"] and "52 ml" in cfg["prompt_text"]
+    assert cfg["valid_digits"] == ["1"] and not cfg["hangup"]
+
+
+def test_result_call_without_pesticide_offers_no_booking():
+    cfg = get_registered_flow_config("result", "result_prompt", context=_ctx("advise_no_pesticide"))
+    assert cfg["hangup"] and cfg["valid_digits"] == [] and "ड्रोन दीदी" not in cfg["prompt_text"]
+
+
+def test_result_call_falls_back_to_demo_script_without_a_case():
+    assert "86 प्रतिशत" in get_registered_flow_config("result", "result_prompt")["prompt_text"]
+
+
 # --- links ----------------------------------------------------------------
 
 def test_link_token_round_trip():
@@ -117,3 +143,9 @@ def test_waypoints_file_turns_sprayer_on_and_off(tmp_path):
     assert rows[0] == "QGC WPL 110"
     assert sum(r.split("\t")[3] == "216" for r in rows[1:]) == 2   # DO_SPRAYER on + off
     assert rows[-1].split("\t")[3] == "20"                          # ends with RTL
+
+
+def test_no_key_redirect_keeps_call_sid_query_intact():
+    from backend.app.services.communications.ivr_service import generate_twiml_for_registered_step
+    twiml = generate_twiml_for_registered_step("warning", "warning_prompt", None, "http://x/ivr/registered/step?call_sid=CA1")
+    assert "call_sid=CA1&amp;timeout=1" in twiml

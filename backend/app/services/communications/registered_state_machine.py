@@ -11,8 +11,32 @@ Implements:
 from typing import Any
 
 
-def get_registered_flow_config(flow: str, step: str, farmer: Any = None) -> dict[str, Any]:
-    """Returns prompt configuration, audio prompt IDs, and gather settings for registered flows."""
+def _result_prompt(context: dict[str, Any]) -> dict[str, Any]:
+    """Result call built from the farmer's case evidence (see services/cases.result_context)."""
+    where = f"लगभग {context['acres']:.1f} एकड़ हिस्से" if context.get("acres") else "एक हिस्से"
+    head = (f"नमस्ते! ICAR-NSRI की सलाह और फोटो जांच के अनुसार आपके खेत के {where} में "
+            f"{context['pct']} प्रतिशत {context['name_hi']} का शक है।")
+    cfg = {"step": "result_prompt", "prompt_id": f"p06_result_{context['action']}"}
+    if context["action"] == "advise_spray":
+        spray = context.get("spray")
+        dose = f" सिर्फ उसी हिस्से में {spray['quantity']:g} {spray['unit']} दवा लगेगी, पूरे खेत में नहीं।" if spray else ""
+        text = f"{head}{dose} ड्रोन दीदी छिड़काव बुक करने के लिए 1 दबाइए। दोबारा सुनने के लिए 9 दबाइए।"
+    elif context["action"] == "didi_verify":
+        text = (f"{head} पक्का करने के लिए ड्रोन दीदी पहले खेत देखेंगी, फिर ज़रूरत हो तो छिड़काव करेंगी। "
+                "ड्रोन दीदी की जांच बुक करने के लिए 1 दबाइए। दोबारा सुनने के लिए 9 दबाइए।")
+    else:   # advise_no_pesticide / expert_check: nothing to book
+        return {**cfg, "prompt_text": f"{head} इसमें कीटनाशक की ज़रूरत नहीं है। हमारे कृषि विशेषज्ञ आपको जल्द कॉल करेंगे। धन्यवाद।",
+                "num_digits": 0, "valid_digits": [], "hangup": True}
+    return {**cfg, "prompt_text": text, "num_digits": 1, "valid_digits": ["1"], "hangup": False}
+
+
+def get_registered_flow_config(flow: str, step: str, farmer: Any = None,
+                               context: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Returns prompt configuration, audio prompt IDs, and gather settings for registered flows.
+
+    context: the farmer's case result (cause, confidence, zone, dose). Without it the result call
+    falls back to the fixed demo script.
+    """
     farmer_name = getattr(farmer, "name", "किसान भाई") if farmer else "किसान भाई"
 
     # ==========================================
@@ -55,6 +79,8 @@ def get_registered_flow_config(flow: str, step: str, farmer: Any = None) -> dict
     # 3. RESULT FLOW (P0-6 Diagnosis & Drone Booking)
     # ==========================================
     elif flow == "result":
+        if step == "result_prompt" and context:
+            return _result_prompt(context)
         if step == "result_prompt":
             return {
                 "step": "result_prompt",
