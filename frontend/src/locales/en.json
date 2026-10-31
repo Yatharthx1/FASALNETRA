@@ -93,6 +93,7 @@
   "dash.new_case": "New case",
   "dash.warning_call": "Warning call",
   "dash.result_call": "Result call",
+  "dash.followup_call": "Day +5 follow-up",
   "dash.build_evidence": "Build evidence",
   "dash.reset": "Reset demo",
   "dash.open_walk": "Open farmer link",

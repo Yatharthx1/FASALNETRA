@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     ivr_callback_sla_seconds: int = 30
 
     # Paths and links. The SMS link opens the frontend's /walk page with a signed case token.
-    audio_prompt_dir: str = "frontend/public/audio/hi"
+    audio_prompt_dir: str = str(REPO_ROOT / "frontend" / "public" / "audio" / "hi")
     sms_link_base_url: str = "http://localhost:5173/walk"
     sms_link_signing_secret: str = "dev-only-change-me"
     sms_link_token_ttl_minutes: int = 1440

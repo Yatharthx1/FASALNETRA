@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.app.api.v1.router import api_router
-from backend.app.core.config import settings
+from backend.app.core.config import REPO_ROOT, settings
 from backend.app.db import models  # noqa: F401  (register tables)
 from backend.app.db.database import Base, SessionLocal, engine
 from backend.app.db.session import init_db
@@ -41,7 +41,7 @@ def create_app() -> FastAPI:
     app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
 
     # Mount audio files directory if present so Twilio can fetch pre-recorded MP3s
-    audio_path = Path("frontend/public/audio")
+    audio_path = REPO_ROOT / "frontend" / "public" / "audio"
     if audio_path.exists():
         app.mount("/audio", StaticFiles(directory=str(audio_path)), name="audio")
 
@@ -52,7 +52,7 @@ def create_app() -> FastAPI:
     @app.get("/call", response_class=HTMLResponse, tags=["ivr"])
     async def call_console() -> HTMLResponse:
         """Web interface to trigger outbound calls and monitor live IVR answers."""
-        template_path = Path("backend/app/templates/call_console.html")
+        template_path = REPO_ROOT / "backend" / "app" / "templates" / "call_console.html"
         if template_path.exists():
             return HTMLResponse(content=template_path.read_text(encoding="utf-8"))
         return HTMLResponse(content="<h1>Call console template missing</h1>")

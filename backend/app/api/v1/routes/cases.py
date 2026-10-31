@@ -72,6 +72,11 @@ async def result_call(case: CaseDep, db: DbDep) -> CallOut:
     return _call_out(case.id, call)
 
 
+@router.post("/{case_id}/followup-call", response_model=CallOut)
+async def followup_call(case: CaseDep, db: DbDep) -> CallOut:
+    return _call_out(case.id, await cases.followup_call(db, case))
+
+
 @router.post("/{case_id}/link", response_model=LinkOut)
 async def send_link(case: CaseDep, db: DbDep) -> LinkOut:
     url, sent = await cases.send_link(db, case)

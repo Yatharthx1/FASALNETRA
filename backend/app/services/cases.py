@@ -113,6 +113,13 @@ async def result_call(db: AsyncSession, case: Case) -> dict:
     return call
 
 
+async def followup_call(db: AsyncSession, case: Case) -> dict:
+    """Day +5: "has it improved?" call after the spray."""
+    call = await asyncio.to_thread(_start_ivr_call, case.field.farmer, "followup")
+    await emit(db, "call_placed", case.id, kind="followup", simulated=not settings.twilio_enabled)
+    return call
+
+
 async def open_case_for_phone(db: AsyncSession, phone: str) -> Case | None:
     q = (select(Case).join(Field).join(FieldOwner).where(FieldOwner.phone == phone)
          .order_by(Case.id.desc()).limit(1))

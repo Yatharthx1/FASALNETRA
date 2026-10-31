@@ -15,7 +15,7 @@ function eventLine(e: AppEvent): string {
   const p = e.payload as Record<string, unknown>;
   switch (e.type) {
     case "case_created": return `Case #${e.case_id}: satellite flagged ${p.flagged_acres} acre (scene ${p.scene})`;
-    case "call_placed": return `${p.kind === "result" ? "Result" : "Warning"} call ${p.simulated ? "(simulated)" : "placed"}`;
+    case "call_placed": return `${p.kind === "result" ? "Result" : p.kind === "followup" ? "Day +5 follow-up" : "Warning"} call ${p.simulated ? "(simulated)" : "placed"}`;
     case "key_pressed": return `Farmer pressed ${p.digit} on ${p.step}`;
     case "answer_saved": return `Answer saved: ${Object.entries(p.answers as object).map(([k, v]) => `${k}=${v ? "yes" : "no"}`).join(", ")}`;
     case "sms_sent": return `SMS ${p.kind === "dose" ? "with dose" : "with link"} ${p.simulated ? "(simulated)" : "sent"}`;
@@ -143,6 +143,10 @@ export default function Dashboard() {
             <button type="button" className="btn" disabled={!kase?.evidence} onClick={() => run(async () => {
               const r = await api.resultCall(kase!.id); setPrompt(r.first_prompt); speak(r.first_prompt.prompt_text); })}>
               <Phone size={16} aria-hidden="true" /> {t("dash.result_call", {}, LANG)}
+            </button>
+            <button type="button" className="btn" disabled={!kase?.evidence} onClick={() => run(async () => {
+              const r = await api.followupCall(kase!.id); setPrompt(r.first_prompt); speak(r.first_prompt.prompt_text); })}>
+              <Phone size={16} aria-hidden="true" /> {t("dash.followup_call", {}, LANG)}
             </button>
           </div>
           {!kase && <p className="body-6 muted">{t("dash.no_case", {}, LANG)}</p>}
