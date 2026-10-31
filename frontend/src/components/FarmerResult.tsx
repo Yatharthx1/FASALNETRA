@@ -29,7 +29,7 @@ export default function FarmerResult({ kase, field, onCase }: { kase: Case; fiel
   const message = !ev ? "" :
     !pest ? t("result.no_pesticide", { cause: causeName(ev.cause) }) :
       sure ? t("result.sure", { cause: causeName(ev.cause), pct: Math.round(ev.confidence * 100), acres: fmt(kase.zone_acres ?? 0, 2) }) :
-        t("result.unsure", { cause: causeName(ev.cause), pct: Math.round(ev.confidence * 100) });
+        t("result.unsure", { cause: causeName(ev.cause) });   // the percentage is shown only when we are sure
 
   useEffect(() => {
     if (!ev) return;
@@ -68,10 +68,12 @@ export default function FarmerResult({ kase, field, onCase }: { kase: Case; fiel
 
       <section className="panel stack result-card" aria-labelledby="res-cause">
         <div className="row" style={{ gap: "var(--s-300)", flexWrap: "nowrap" }}>
-          <div className="ring ring-big" style={{ "--p": pct, "--ring": RING[ev.level] } as React.CSSProperties}
-            role="img" aria-label={`${t("ev.confidence")} ${pct}%`}>
-            <div><span className="num">{pct}%</span></div>
-          </div>
+          {sure ? (
+            <div className="ring ring-big" style={{ "--p": pct, "--ring": RING[ev.level] } as React.CSSProperties}
+              role="img" aria-label={`${t("ev.confidence")} ${pct}%`}>
+              <div><span className="num">{pct}%</span></div>
+            </div>
+          ) : <Icon size={72} aria-hidden="true" style={{ color: RING[ev.level], flexShrink: 0 }} />}
           <div className="stack" style={{ gap: "var(--s-75)" }}>
             <h2 id="res-cause" className="heading-5">{t("ev.suspected", { cause: causeName(ev.cause) })}</h2>
             <span className={`chip level-${ev.level}`}><Icon size={16} aria-hidden="true" /> {t(`ev.level.${ev.level}` as Key)}</span>

@@ -97,3 +97,38 @@ async def test_link_token_opens_only_its_case(client):
     token = url.split("t=")[1]
     assert (await client.get(f"{API}/cases/by-token", params={"t": token})).json()["id"] == case["id"]
     assert (await client.get(f"{API}/cases/by-token", params={"t": token[:-1] + ("1" if token[-1] == "0" else "0")})).status_code == 403
+
+
+async def test_farmer_missed_call_reports_a_problem_and_gets_the_photo_link(client):
+    # Missed call -> free callback (3 s); the pre-registered demo farmer is asked to report a problem, not onboarded
+    phone = (await client.post(f"{API}/fields/demo/missed-call")).json()["phone"]
+    session = (await client.get(f"{API}/ivr/session/{phone}")).json()["session"]
+    assert session["flow"] == "report"
+
+    menu = (await client.post(f"{API}/ivr/simulate/registered", json={"phone": phone})).json()
+    assert menu["current_step"] == "report_prompt" and menu["valid_digits"] == ["1", "2", "3", "4"]
+    asked = (await client.post(f"{API}/ivr/simulate/registered", json={"phone": phone, "digits": "1"})).json()
+    assert asked["current_step"] == "whitefly_question"
+    await client.post(f"{API}/ivr/simulate/registered", json={"phone": phone, "digits": "1"})
+
+    events = (await client.get(f"{API}/events")).json()
+    cid = next(e["case_id"] for e in reversed(events) if e["type"] == "farmer_reported")
+    case = (await client.get(f"{API}/cases/{cid}")).json()
+    assert case["keypad"] == {"yellow_mosaic_patches": True, "whitefly_under_leaves": True}
+    assert any(e["type"] == "sms_sent" and e["case_id"] == cid for e in events)
+
+
+async def test_unsure_result_calls_the_farmer_to_offer_drone_didi(client):
+    case = await _case(client)
+    cid = case["id"]
+    await client.post(f"{API}/cases/{cid}/traps", json={"counts": [3, 12, 5, 2]})
+    ev = (await client.post(f"{API}/cases/{cid}/evidence")).json()["evidence"]
+    assert ev["level"] != "high" and ev["action"] == "didi_verify"
+
+    calls = [e for e in (await client.get(f"{API}/events", params={"case_id": cid})).json() if e["type"] == "call_placed"]
+    assert calls and calls[-1]["payload"]["kind"] == "result"
+    prompt = (await client.post(f"{API}/ivr/simulate/registered", json={"phone": "+919876543210"})).json()
+    assert "प्रतिशत" not in prompt["prompt_text"] and "ड्रोन दीदी" in prompt["prompt_text"]
+    await client.post(f"{API}/ivr/simulate/registered", json={"phone": "+919876543210", "digits": "1"})
+    job = [j for j in (await client.get(f"{API}/didi/jobs")).json() if j["case_id"] == cid][0]
+    assert job["mode"] == "verify_then_spray" and job["status"] == "new"

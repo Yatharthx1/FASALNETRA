@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ExternalLink, Phone, PhoneCall, Plus, RotateCcw, Volume2 } from "lucide-react";
+import { ExternalLink, Phone, PhoneCall, PhoneIncoming, Plus, RotateCcw, Volume2 } from "lucide-react";
 import EvidenceCard from "../components/EvidenceCard";
 import FieldMap from "../components/FieldMap";
 import { ErrorNotice, Skeleton, useAsync } from "../components/common";
@@ -27,6 +27,7 @@ function eventLine(e: AppEvent): string {
     case "didi_booked": return `Drone Didi booked (${p.mode}), ${p.minutes} min flight, best ${String(p.best ?? "-").slice(11, 16)}`;
     case "didi_complete": return `Spray done. ${p.acres_not_sprayed} acre not sprayed, ${p.chemical_saved} ${p.unit ?? ""} saved`;
     case "human_requested": return "Farmer asked for a human expert";
+    case "farmer_reported": return "Farmer gave a missed call and reported a problem";
     case "booking_skipped": return `Drone Didi not booked: ${p.reason}`;
     case "followup_recorded": return `Follow-up answer: ${String(p.feedback).replace(/_/g, " ")}`;
     default: return e.type.replace(/_/g, " ");
@@ -65,6 +66,7 @@ export default function Dashboard() {
     return eventsSocket((e) => {
       setEvents((list) => [...list.slice(-199), e]);
       takeLink(e);
+      if (e.type === "case_created" && e.case_id) { refreshCase(e.case_id).catch(() => undefined); setLink(null); }
       if (e.case_id && ["photo_received", "zone_mapped", "evidence_ready", "didi_booked", "traps_counted"].includes(e.type)) {
         refreshCase(e.case_id).catch(() => undefined);
       }
@@ -129,6 +131,12 @@ export default function Dashboard() {
           <div className="row">
             <button type="button" className="btn btn-primary" onClick={() => run(async () => { const c = await api.createCase(); setKase(c); setPrompt(null); setLink(null); })}>
               <Plus size={16} aria-hidden="true" /> {t("dash.new_case", {}, LANG)}
+            </button>
+            <button type="button" className="btn" onClick={() => run(async () => {
+              const { phone, callback_in_s } = await api.missedCall();
+              await new Promise((r) => setTimeout(r, callback_in_s * 1000 + 500));   // free callback rings back
+              const p = await api.ivrPrompt(phone); setPrompt(p); speak(p.prompt_text); })}>
+              <PhoneIncoming size={16} aria-hidden="true" /> {t("dash.missed_call", {}, LANG)}
             </button>
             <button type="button" className="btn" disabled={!kase} onClick={() => run(async () => {
               const r = await api.warningCall(kase!.id); setPrompt(r.first_prompt); speak(r.first_prompt.prompt_text); })}>

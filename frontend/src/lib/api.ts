@@ -29,6 +29,8 @@ export const api = {
   createCase: (field_id = "demo") => post<Case>("/cases", { field_id }),
   getCase: (id: number) => req<Case>(`/cases/${id}`),
   caseByToken: (t: string) => req<Case>(`/cases/by-token?t=${encodeURIComponent(t)}`),
+  missedCall: (fieldId = "demo") => post<{ phone: string; callback_in_s: number }>(`/fields/${fieldId}/missed-call`),
+  ivrPrompt: (phone: string) => post<IvrPrompt>("/ivr/simulate/registered", { phone }),
   warningCall: (id: number) => post<CallResult>(`/cases/${id}/warning-call`),
   resultCall: (id: number) => post<CallResult>(`/cases/${id}/result-call`),
   followupCall: (id: number) => post<CallResult>(`/cases/${id}/followup-call`),

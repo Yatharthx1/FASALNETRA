@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from backend.app.db import models  # noqa: F401  (register tables)
 from backend.app.db.database import Base, SessionLocal, engine
 from backend.app.db.session import init_db
 from backend.app.services import didi, fields
+from backend.app.services.communications import ivr_service
 
 
 @asynccontextmanager
@@ -23,6 +25,8 @@ async def lifespan(app: FastAPI):
     async with SessionLocal() as db:
         await fields.seed_demo(db)
         await didi.seed_demo_tickets(db)
+    # PRD: the demo farmer is pre-registered, so his missed call goes straight to "report a problem"
+    await asyncio.to_thread(ivr_service.ensure_registered, settings.demo_farmer_phone, settings.demo_farmer_name, "Rampura")
     yield
     await engine.dispose()
 

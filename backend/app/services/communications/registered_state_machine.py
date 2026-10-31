@@ -10,6 +10,14 @@ Implements:
 
 from typing import Any
 
+# Farmer-initiated report (missed call -> callback): key -> symptom answer id read by the evidence card
+REPORT_SYMPTOMS = {
+    "1": "yellow_mosaic_patches",   # पत्तों पर पीले-हरे धब्बे
+    "2": "holes_in_leaves",         # पत्तों में छेद या इल्ली
+    "3": "brown_spots",             # पत्तों पर भूरे धब्बे
+    "4": "wilting_afternoon",       # पौधे मुरझा रहे हैं
+}
+
 
 def _result_prompt(context: dict[str, Any]) -> dict[str, Any]:
     """Result call built from the farmer's case evidence (see services/cases.result_context)."""
@@ -22,8 +30,10 @@ def _result_prompt(context: dict[str, Any]) -> dict[str, Any]:
         dose = f" सिर्फ उसी हिस्से में {spray['quantity']:g} {spray['unit']} दवा लगेगी, पूरे खेत में नहीं।" if spray else ""
         text = f"{head}{dose} ड्रोन दीदी छिड़काव बुक करने के लिए 1 दबाइए। दोबारा सुनने के लिए 9 दबाइए।"
     elif context["action"] == "didi_verify":
-        text = (f"{head} पक्का करने के लिए ड्रोन दीदी पहले खेत देखेंगी, फिर ज़रूरत हो तो छिड़काव करेंगी। "
-                "ड्रोन दीदी की जांच बुक करने के लिए 1 दबाइए। दोबारा सुनने के लिए 9 दबाइए।")
+        # Not sure yet: no percentage, just the suspicion and the offer to send Drone Didi
+        text = (f"नमस्ते! आपकी फोटो मिल गई। आपके खेत के {where} में {context['name_hi']} का शक है, पर अभी पक्का नहीं कह सकते। "
+                "अभी दवा मत डालिए। ड्रोन दीदी आकर खेत देखेंगी, फिर ज़रूरत हो तो सिर्फ उसी हिस्से में छिड़काव करेंगी। "
+                "ड्रोन दीदी से जुड़ने के लिए 1 दबाइए। दोबारा सुनने के लिए 9 दबाइए।")
     else:   # advise_no_pesticide / expert_check: nothing to book
         return {**cfg, "prompt_text": f"{head} इसमें कीटनाशक की ज़रूरत नहीं है। हमारे कृषि विशेषज्ञ आपको जल्द कॉल करेंगे। धन्यवाद।",
                 "num_digits": 0, "valid_digits": [], "hangup": True}
@@ -53,9 +63,22 @@ def get_registered_flow_config(flow: str, step: str, farmer: Any = None,
         }
 
     # ==========================================
+    # 1b. REPORT FLOW (farmer gave a missed call about a problem)
+    # ==========================================
+    elif flow == "report" and step == "report_prompt":
+        return {
+            "step": "report_prompt",
+            "prompt_id": "report_symptom_menu",
+            "prompt_text": "नमस्ते! फसलनेत्र में आपका स्वागत है। खेत में क्या दिख रहा है? पत्तों पर पीले धब्बे हैं तो 1, पत्तों में छेद या इल्ली है तो 2, पत्तों पर भूरे धब्बे हैं तो 3, पौधे मुरझा रहे हैं तो 4 दबाइए। दोबारा सुनने के लिए 9 दबाइए।",
+            "num_digits": 1,
+            "valid_digits": list(REPORT_SYMPTOMS),
+            "hangup": False,
+        }
+
+    # ==========================================
     # 2. WARNING FLOW (P0-2 Whitefly Alert)
     # ==========================================
-    elif flow == "warning":
+    elif flow in ("warning", "report"):
         if step == "warning_prompt":
             return {
                 "step": "warning_prompt",
@@ -99,6 +122,15 @@ def get_registered_flow_config(flow: str, step: str, farmer: Any = None,
                 "num_digits": 1,
                 "valid_digits": ["1"],
                 "hangup": False,
+            }
+        elif step == "booking_confirmed" and context and context["action"] == "didi_verify":
+            return {
+                "step": "booking_confirmed",
+                "prompt_id": "p06_verify_booked",
+                "prompt_text": "धन्यवाद! ड्रोन दीदी को बता दिया है। वे आकर आपका खेत देखेंगी और ज़रूरत हो तो सिर्फ बीमार हिस्से में छिड़काव करेंगी।",
+                "num_digits": 0,
+                "valid_digits": [],
+                "hangup": True,
             }
         elif step == "booking_confirmed":
             return {
@@ -155,6 +187,32 @@ def process_registered_step_input(
             "message": "Prompt repeated.",
         }
 
+    # Flow 1b: Report (farmer-initiated). Any symptom sends the photo link, then the whitefly question.
+    if flow == "report" and current_step == "report_prompt":
+        if clean_digits in REPORT_SYMPTOMS:
+            return {
+                "next_step": "whitefly_question",
+                "reprompt": False,
+                "reprompt_count": 0,
+                "action": f"report_symptom_{REPORT_SYMPTOMS[clean_digits]}",
+                "message": f"Symptom reported: {REPORT_SYMPTOMS[clean_digits]}; SMS link dispatched.",
+            }
+        if reprompt_count < 1:
+            return {
+                "next_step": "report_prompt",
+                "reprompt": True,
+                "reprompt_count": reprompt_count + 1,
+                "action": "reprompt",
+                "message": "कृपया 1, 2, 3 या 4 में से एक बटन दबाएं।",
+            }
+        return {
+            "next_step": "whitefly_question",
+            "reprompt": False,
+            "reprompt_count": 0,
+            "action": "report_symptom_unknown",   # no answer: still send the photo link
+            "message": "No symptom chosen; SMS link dispatched.",
+        }
+
     # Flow 2: Warning
     if flow == "warning" and current_step == "warning_prompt":
         if clean_digits == "1":
@@ -181,7 +239,7 @@ def process_registered_step_input(
             "message": "Defaulting to SMS link dispatch.",
         }
 
-    if flow == "warning" and current_step == "whitefly_question":
+    if flow in ("warning", "report") and current_step == "whitefly_question":
         if clean_digits in ["1", "2"]:
             answer = "yes" if clean_digits == "1" else "no"
             return {

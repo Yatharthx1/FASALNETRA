@@ -21,8 +21,10 @@ from backend.app.schemas.ivr import (
 )
 from backend.app.services import cases
 from backend.app.services.communications.ivr_service import (
+    REGISTERED_FIRST_STEP,
     advance_registered,
     clean_phone_number,
+    inbound_flow,
     generate_twiml_for_registered_step,
     generate_twiml_for_step,
     save_farmer_from_onboarding,
@@ -72,14 +74,9 @@ async def execute_missed_call_callback(phone: str, db_session_maker) -> None:
         is_registered = farmer is not None and farmer.status == "registered"
 
         if is_registered:
-            flow = farmer.active_flow or "safe"
-            step_map = {
-                "safe": "safe_message",
-                "warning": "warning_prompt",
-                "result": "result_prompt",
-                "followup": "followup_prompt",
-            }
-            initial_step = step_map.get(flow, "safe_message")
+            last = db.query(IVRSession).filter(IVRSession.phone == clean_phone).first()
+            flow = inbound_flow(farmer, last)
+            initial_step = REGISTERED_FIRST_STEP[flow]
             callback_url = f"{settings.public_base_url}{settings.api_v1_prefix}/ivr/registered/start?phone={clean_phone}&flow={flow}"
             logger.info("Farmer %s is REGISTERED. Executing flow: %s", clean_phone, flow)
         else:
@@ -251,13 +248,7 @@ async def ivr_registered_start(
     farmer = db.query(Farmer).filter(Farmer.phone == farmer_phone).first()
     active_flow = flow or (farmer.active_flow if farmer else "safe")
 
-    step_map = {
-        "safe": "safe_message",
-        "warning": "warning_prompt",
-        "result": "result_prompt",
-        "followup": "followup_prompt",
-    }
-    initial_step = step_map.get(active_flow, "safe_message")
+    initial_step = REGISTERED_FIRST_STEP.get(active_flow, "safe_message")
 
     clean_sid = CallSid or f"session-{farmer_phone.replace('+', '')}"
     session = (

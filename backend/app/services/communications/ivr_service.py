@@ -179,8 +179,38 @@ REGISTERED_FIRST_STEP = {
     "warning": "warning_prompt",
     "result": "result_prompt",
     "followup": "followup_prompt",
+    "report": "report_prompt",
 }
 REGISTERED_DONE_STEPS = ["sms_dispatched", "booking_confirmed", "followup_recorded", "completed"]
+
+
+def inbound_flow(farmer: Farmer | None, session: IVRSession | None = None) -> str:
+    """Flow for the free callback after a missed call.
+
+    New farmers are onboarded. A registered farmer who calls in is reporting a problem, unless a
+    result or follow-up call to them is still unfinished (e.g. they missed it and are calling back).
+    """
+    if farmer is None or farmer.status != "registered":
+        return "onboarding"
+    pending = session is not None and session.flow == farmer.active_flow and session.status != "completed"
+    return farmer.active_flow if farmer.active_flow in ("result", "followup") and pending else "report"
+
+
+def ensure_registered(phone: str, name: str, village: str) -> Farmer:
+    """Pre-register a known field owner (PRD: the demo farmer is pre-registered with his onboarding data)."""
+    from backend.app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        clean = clean_phone_number(phone)
+        farmer = db.query(Farmer).filter(Farmer.phone == clean).first()
+        if farmer is None:
+            farmer = Farmer(phone=clean, name=name, village=village, crop="soybean", status="registered")
+            db.add(farmer)
+            db.commit()
+        return farmer
+    finally:
+        db.close()
 
 
 def clean_phone_number(phone: str) -> str:
@@ -273,6 +303,12 @@ def advance_registered(db, session: IVRSession, digits: str | None) -> dict[str,
     elif action.startswith("record_feedback_"):
         answers = dict(session.answers or {})
         answers["followup_feedback"] = action.replace("record_feedback_", "")
+        session.answers = answers
+
+    elif action.startswith("report_symptom_"):
+        answers = dict(session.answers or {})
+        answers["symptom"] = action.replace("report_symptom_", "")
+        answers["sms_sent"] = True
         session.answers = answers
 
     elif action.startswith("record_whitefly_"):

@@ -1,8 +1,10 @@
 import asyncio
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 
 from backend.app.api.deps import FieldDep
+from backend.app.api.v1.routes.ivr import execute_missed_call_callback
+from backend.app.db.session import SessionLocal as IvrSessionLocal
 from backend.app.schemas import FieldOut, RiskOut, ScanOut
 from backend.app.services import fields
 
@@ -18,6 +20,13 @@ async def get_field(field: FieldDep) -> FieldOut:
 async def get_risk(field: FieldDep) -> RiskOut:
     """15 daily risk scores from today (demo: replay of the 2025 season from 15 Aug)."""
     return await asyncio.to_thread(fields.risk, field)
+
+
+@router.post("/{field_id}/missed-call")
+async def missed_call(field: FieldDep, background_tasks: BackgroundTasks) -> dict[str, str | int]:
+    """Dashboard stand-in for the farmer giving a missed call: same free callback as POST /ivr/webhook."""
+    background_tasks.add_task(execute_missed_call_callback, field.farmer.phone, IvrSessionLocal)
+    return {"phone": field.farmer.phone, "callback_in_s": 3}
 
 
 @router.get("/{field_id}/demo-walk", response_model=list[tuple[float, float]])

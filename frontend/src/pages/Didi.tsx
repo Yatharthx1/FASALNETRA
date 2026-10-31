@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowLeft, BatteryFull, CalendarClock, ChevronRight, CloudRain, Download, Droplets, Fuel, Leaf, MapPinned, Pause,
+  ArrowLeft, BatteryFull, Bell, CalendarClock, ChevronRight, CloudRain, Download, Droplets, Fuel, Leaf, MapPinned, Pause,
   Plane, Play, ShieldCheck, Stethoscope, Timer, Users, Wind,
 } from "lucide-react";
 import FieldMap from "../components/FieldMap";
 import { ErrorNotice, Skeleton, useAsync } from "../components/common";
 import { api, eventsSocket } from "../lib/api";
-import { causeName, fmt, t, type Key } from "../lib/i18n";
+import { causeName, fmt, speak, t, type Key } from "../lib/i18n";
 import type { DidiProfile, Job } from "../types/api";
 
 const STATUS_CHIP: Record<Job["status"], string> = { new: "band-high", accepted: "band-watch", flying: "band-watch", done: "band-safe", declined: "level-low" };
@@ -18,15 +18,45 @@ export default function Didi() {
   const [openId, setOpenId] = useState<number | null>(null);
   const reload = useCallback(() => { jobsQ.reload(); profileQ.reload(); }, [jobsQ.reload, profileQ.reload]);
 
-  useEffect(() => eventsSocket((e) => { if (e.type.startsWith("didi_") || e.type === "demo_reset") reload(); }), [reload]);
+  // New farmer request: banner + spoken alert + phone notification (jobs present at page load are not "new")
+  const seen = useRef<Set<number> | null>(null);
+  useEffect(() => eventsSocket((e) => {
+    if (e.type === "demo_reset") { seen.current = null; setAlert(null); }   // ids restart after a reset
+    if (e.type.startsWith("didi_") || e.type === "demo_reset") reload();
+  }), [reload]);
 
   const jobs = jobsQ.data ?? [];
   const open = jobs.find((j) => j.id === openId) ?? null;
+
+  const [alert, setAlert] = useState<Job | null>(null);
+  const [canNotify, setCanNotify] = useState(() => typeof Notification !== "undefined" && Notification.permission === "granted");
+  useEffect(() => {
+    if (!jobsQ.data) return;
+    if (seen.current === null) { seen.current = new Set(jobsQ.data.map((j) => j.id)); return; }
+    const fresh = jobsQ.data.find((j) => j.status === "new" && !seen.current!.has(j.id));
+    jobsQ.data.forEach((j) => seen.current!.add(j.id));
+    if (!fresh) return;
+    const text = t("didi.new_request", { farmer: fresh.ticket.farmer, village: fresh.ticket.village, khasra: fresh.ticket.khasra });
+    setAlert(fresh);
+    speak(text);
+    if (canNotify) new Notification("FasalNetra", { body: text, tag: `job-${fresh.id}` });
+  }, [jobsQ.data, canNotify]);
 
   return (
     <main className="didi">
       {profileQ.data ? <ProfileBar p={profileQ.data} /> : <Skeleton height={88} />}
       {(jobsQ.error || profileQ.error) && <ErrorNotice error={(jobsQ.error || profileQ.error)!} onRetry={reload} />}
+      {!canNotify && typeof Notification !== "undefined" && Notification.permission === "default" && (
+        <button type="button" className="btn" onClick={() => Notification.requestPermission().then((p) => setCanNotify(p === "granted"))}>
+          <Bell size={18} aria-hidden="true" /> {t("didi.notify_on")}
+        </button>
+      )}
+      {alert && (
+        <section className="notice notice-ok row spread" role="alert">
+          <p className="heading-6"><Bell size={20} aria-hidden="true" /> {t("didi.new_request", { farmer: alert.ticket.farmer, village: alert.ticket.village, khasra: alert.ticket.khasra })}</p>
+          <button type="button" className="btn btn-primary" onClick={() => { setOpenId(alert.id); setAlert(null); }}>{t("didi.open_request")}</button>
+        </section>
+      )}
 
       {open ? (
         <TicketDetail key={open.id} job={open} onBack={() => setOpenId(null)} onChange={reload} />

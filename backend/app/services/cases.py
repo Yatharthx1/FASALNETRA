@@ -126,14 +126,38 @@ async def open_case_for_phone(db: AsyncSession, phone: str) -> Case | None:
     return (await db.execute(q)).scalars().first()
 
 
+OPEN_STATUSES = ("warned", "link_sent", "collecting")   # case still waiting for photos
+
+
+async def _case_for_report(db: AsyncSession, phone: str) -> Case | None:
+    """Farmer called in about a problem: reuse a case still waiting for photos, else open a new one."""
+    latest = await open_case_for_phone(db, phone)
+    if latest is not None and latest.status in OPEN_STATUSES:
+        return latest
+    field = (await db.execute(select(Field).join(FieldOwner).where(FieldOwner.phone == phone))).scalars().first()
+    if field is None:   # registered by phone but no mapped field yet
+        return None
+    case = await create(db, field.id)
+    await emit(db, "farmer_reported", case.id, phone=phone)
+    return case
+
+
 async def on_ivr_action(db: AsyncSession, phone: str, step: str, digit: str | None, action: str) -> None:
     """Side effects of a key press in the IVR's registered flows on the farmer's latest case."""
-    case = await open_case_for_phone(db, phone)
+    if action.startswith("report_symptom_"):
+        case = await _case_for_report(db, phone)
+    else:
+        case = await open_case_for_phone(db, phone)
     if case is None:
         return
     if digit is not None:
         await emit(db, "key_pressed", case.id, step=step, digit=digit)
-    if action == "send_sms_link":
+    if action.startswith("report_symptom_"):
+        symptom = action.removeprefix("report_symptom_")
+        if symptom != "unknown":
+            await save_keypad(db, case, {symptom: True})
+        await send_link(db, case)
+    elif action == "send_sms_link":
         await send_link(db, case)
     elif action == "confirm_drone_booking":
         try:
@@ -255,6 +279,9 @@ async def build_evidence(db: AsyncSession, case: Case) -> Case:
     if ev["level"] == "high":
         nb = fields.neighbours_within(f)
         await emit(db, "neighbours_warned", case.id, cause=ev["cause"], count=len(nb), fields=nb[:5])
+    elif ev["action"] == "didi_verify":
+        # Not sure: besides the page, call the farmer and offer Drone Didi by voice (key 1 books her check)
+        await result_call(db, case)
     return case
 
 

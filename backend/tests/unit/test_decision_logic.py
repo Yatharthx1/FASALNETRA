@@ -157,3 +157,16 @@ def test_whitefly_question_repeats_once_then_moves_on_as_dont_know():
     assert first["next_step"] == "whitefly_question" and first["reprompt"]
     second = process_registered_step_input("warning", "whitefly_question", None, reprompt_count=1)
     assert second["next_step"] == "sms_dispatched" and second["action"] == "record_whitefly_unknown"
+
+
+def test_inbound_callback_flow_by_farmer_state():
+    from types import SimpleNamespace
+
+    from backend.app.services.communications.ivr_service import inbound_flow
+    assert inbound_flow(None) == "onboarding"
+    assert inbound_flow(SimpleNamespace(status="onboarding", active_flow="safe")) == "onboarding"
+    assert inbound_flow(SimpleNamespace(status="registered", active_flow="safe")) == "report"
+    assert inbound_flow(SimpleNamespace(status="registered", active_flow="warning")) == "report"
+    result_farmer = SimpleNamespace(status="registered", active_flow="result")
+    assert inbound_flow(result_farmer, SimpleNamespace(flow="result", status="in_progress")) == "result"
+    assert inbound_flow(result_farmer, SimpleNamespace(flow="result", status="completed")) == "report"

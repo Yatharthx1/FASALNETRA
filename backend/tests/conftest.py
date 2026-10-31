@@ -41,8 +41,11 @@ async def client():
     from backend.app.db.database import Base, engine
     from backend.app.main import create_app, lifespan
 
+    from backend.app.db import session as ivr_db
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+    ivr_db.Base.metadata.drop_all(bind=ivr_db.engine)   # Yatharth's IVR tables (farmers, ivr_sessions)
     app = create_app()
     async with lifespan(app):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
