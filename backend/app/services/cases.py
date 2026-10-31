@@ -271,6 +271,11 @@ async def build_evidence(db: AsyncSession, case: Case) -> Case:
                         zone_acres=case.zone_acres or scan["summary"]["flagged_acres"])
     ev["savings"] = advisory.savings(f.area_acres, case.zone_acres or 0, ev["cause"],
                                      settings.pesticide_price_inr_per_unit)
+    try:
+        ev["combined_advisory"] = await asyncio.to_thread(fields.combined_advisory, f)
+    except Exception:
+        ev["combined_advisory"] = None
+
     case.evidence = ev
     case.status = "evidence_ready"
     await db.commit()

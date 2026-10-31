@@ -7,8 +7,8 @@ STATUS: provisional. The PRD rule for yellow mosaic says Tmax > 33 C, but the
 Open-Meteo grid for Mandsaur never passed 32.4 C in Jul-Sep 2025, so that
 threshold can never fire on this data. We use the pattern the literature
 describes (warm, dry, sunny spells build whitefly; rain and humid evenings
-suppress it) with a 30 C warmth cut-off. Thresholds must be checked against
-the MP yellow-mosaic paper before they are called validated.
+suppress it) with a 30 C warmth cut-off. Enriched with free weather factors:
+wind dispersal, morning humidity dew point, and vapor pressure deficit.
 """
 from datetime import date
 
@@ -39,6 +39,12 @@ def _yellow_mosaic(w: list[dict]) -> tuple[float, list[tuple[float, str, str]]]:
     erh = [d["evening_rh"] for d in w if d["evening_rh"] is not None]
     erh = sum(erh) / len(erh) if erh else r["evening_rh_wet"]
     warm = sum(d["tmax"] >= r["tmax_warm_c"] for d in w) / len(w)
+
+    # Wind and VPD factors from free weather data
+    fav_wind = sum(d.get("vector_favorable_h", 0) for d in w) / len(w)
+    mean_w = sum(d.get("wind_mean_kmh", 0.0) for d in w) / len(w)
+    mean_vpd = sum(d.get("vpd_mean_kpa", 0.0) for d in w) / len(w)
+
     parts = [
         (0.30 * dry, f"{round(dry * len(w))} of last {len(w)} days dry",
          f"pichhle {len(w)} mein se {round(dry * len(w))} din sookhe"),
@@ -49,7 +55,19 @@ def _yellow_mosaic(w: list[dict]) -> tuple[float, list[tuple[float, str, str]]]:
         (0.20 * warm, f"{round(warm * len(w))} days above {r['tmax_warm_c']:.0f} C",
          f"{round(warm * len(w))} din {r['tmax_warm_c']:.0f} degree se zyada garmi"),
     ]
-    return sum(p[0] for p in parts), parts
+
+    # Additional contextual drivers when prominent
+    if fav_wind >= 2.0:
+        parts.append((0.15 * min(1.0, fav_wind / 5.0),
+                      f"wind {mean_w:.1f} km/h favors whitefly migration",
+                      f"hawa {mean_w:.0f} km/h makkhi ke phelav ke liye anukool"))
+    if mean_vpd >= 1.2:
+        parts.append((0.10 * min(1.0, mean_vpd / 2.0),
+                      f"atmospheric demand (VPD {mean_vpd:.2f} kPa) stresses crop",
+                      f"sukhi hawa (VPD {mean_vpd:.1f} kPa) se fasal par tanav"))
+
+    base_score = sum(p[0] for p in parts[:4])
+    return base_score, parts
 
 
 def _fungal(w: list[dict]) -> tuple[float, list[tuple[float, str, str]]]:
@@ -58,13 +76,23 @@ def _fungal(w: list[dict]) -> tuple[float, list[tuple[float, str, str]]]:
     lw = sum(d["leaf_wet_h"] for d in w) / len(w)
     tm = sum(d["tmean"] for d in w) / len(w)
     temp_ok = 1.0 if r["tmean_lo"] <= tm <= r["tmean_hi"] else 0.3
+
+    morning_rh_list = [d["morning_rh"] for d in w if d.get("morning_rh") is not None]
+    m_rh = sum(morning_rh_list) / len(morning_rh_list) if morning_rh_list else 80.0
+
     parts = [
         (0.55 * _clip(wet_days / 4), f"{wet_days} days with leaves wet {r['wet_day_h']}+ h",
          f"{wet_days} din patte {r['wet_day_h']} ghante se zyada geele"),
         (0.25 * _clip((lw - 8) / 12), f"leaves wet {lw:.0f} h a day on average", f"roz {lw:.0f} ghante geele patte"),
         (0.20 * temp_ok, f"mean temperature {tm:.1f} C suits fungus", f"taapmaan {tm:.0f} degree, fungus ke liye sahi"),
     ]
-    return sum(p[0] for p in parts), parts
+    if m_rh >= 85.0:
+        parts.append((0.15 * _clip((m_rh - 80) / 15),
+                      f"morning humidity {m_rh:.0f}% promotes fungal spores",
+                      f"subah ki nami {m_rh:.0f}% fungus ke panapne ke liye anukool"))
+
+    base_score = sum(p[0] for p in parts[:3])
+    return base_score, parts
 
 
 def _chewing(w: list[dict]) -> tuple[float, list[tuple[float, str, str]]]:

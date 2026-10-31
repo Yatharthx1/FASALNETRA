@@ -17,6 +17,7 @@ htmlcov/
 node_modules/
 dist/
 .vite/
+*.tsbuildinfo
 
 # Local databases and runtime files
 *.db
@@ -29,6 +30,7 @@ data/uploads/*
 !data/uploads/.gitkeep
 backend/data/tts-cache/
 artifacts/*
+artifacts/**/*.waypoints
 !artifacts/**/
 !artifacts/**/.gitkeep
 

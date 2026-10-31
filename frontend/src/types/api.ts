@@ -79,4 +79,65 @@ export interface DidiProfile {
   jobs_open: number; jobs_done: number; acres_sprayed: number; acres_saved: number; pesticide_saved: number; pesticide_unit: string;
 }
 
+export interface CombinedAdvisory {
+  field_id: string;
+  score: number;
+  band: "safe" | "watch" | "high" | "critical";
+  level: "low" | "medium" | "high";
+  primary_cause: string;
+  primary_cause_en: string;
+  primary_cause_hi: string;
+  crop_age_das: number;
+  synergy_multiplier: number;
+  action: {
+    code: string;
+    en: string;
+    hi: string;
+    spray_recommended: boolean;
+    zone_acres: number | null;
+  };
+  narrative: {
+    en: string;
+    hi: string;
+  };
+  components: {
+    satellite: {
+      score: number;
+      pattern: string;
+      strength: number;
+      flagged_cells: number;
+      flagged_acres: number;
+      z_ndre: number | null;
+      z_ndvi: number | null;
+      low_spot_overlap: number;
+      drivers: Driver[];
+    };
+    weather: {
+      score: number;
+      vector_dispersal_factor: number;
+      fungal_conduciveness_factor: number;
+      spray_feasibility?: {
+        date: string;
+        overall_suitability: string;
+        best_window: string | null;
+        mean_wind_kmh: number;
+        advisory_hi: string;
+        advisory_en: string;
+      };
+      drivers: Driver[];
+    };
+    crop_stage: {
+      das: number;
+      vulnerability_factor: number;
+    };
+  };
+  causes: Record<string, {
+    score: number;
+    sat_component: number;
+    wea_component: number;
+    crop_component: number;
+    synergy_multiplier: number;
+  }>;
+}
+
 export interface AppEvent { id?: number; ts?: string; type: string; case_id: number | null; payload: Record<string, unknown> }

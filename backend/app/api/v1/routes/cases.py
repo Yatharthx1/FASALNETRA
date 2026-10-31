@@ -105,7 +105,7 @@ async def upload_photo(
     lon: Annotated[float | None, Form(ge=-180, le=180)] = None,
 ) -> PhotoOut:
     if kind not in PHOTO_KINDS:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"kind must be one of {sorted(PHOTO_KINDS)}")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"kind must be one of {sorted(PHOTO_KINDS)}")
     data = await file.read(MAX_PHOTO_BYTES + 1)
     if len(data) > MAX_PHOTO_BYTES:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Photo over 12 MB")
@@ -114,7 +114,7 @@ async def upload_photo(
     except vision.VisionUnavailable as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     except OSError as exc:   # PIL cannot read it
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Not an image: {exc}") from exc
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Not an image: {exc}") from exc
 
 
 @router.post("/{case_id}/walk", response_model=CaseOut)

@@ -22,6 +22,28 @@ async def get_risk(field: FieldDep) -> RiskOut:
     return await asyncio.to_thread(fields.risk, field)
 
 
+@router.get("/{field_id}/spray-window")
+async def get_spray_window(field: FieldDep) -> dict:
+    """Spray window feasibility, wind speed drift risk, and recommended spray slot."""
+    return await asyncio.to_thread(fields.spray_window, field)
+
+
+@router.get("/{field_id}/combined-advisory")
+async def get_combined_advisory(field: FieldDep) -> dict:
+    """Fused Sentinel-2 satellite anomaly and agrometeorological advisory score."""
+    try:
+        return await asyncio.to_thread(fields.combined_advisory, field)
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            f"Satellite or weather data missing: {exc}") from exc
+
+
+@router.get("/{field_id}/soybean-profile")
+async def get_soybean_profile(field: FieldDep) -> dict:
+    """Specialized ICAR-IISR soybean phenological stage, ETL thresholds, and nutrition profile."""
+    return await asyncio.to_thread(fields.soybean_profile, field)
+
+
 @router.post("/{field_id}/missed-call")
 async def missed_call(field: FieldDep, background_tasks: BackgroundTasks) -> dict[str, str | int]:
     """Dashboard stand-in for the farmer giving a missed call: same free callback as POST /ivr/webhook."""
