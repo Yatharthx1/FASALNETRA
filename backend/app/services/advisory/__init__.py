@@ -2,11 +2,17 @@
 
 The LLM never invents a dose. It picks a cause; this module returns the
 ICAR-NSRI row and turns the per-hectare dose into what the farmer or
-Drone Didi actually needs for the affected zone.
+Drone Didi actually needs for the affected zone, enriched with free weather
+operational factors (wind drift, spray windows, humidity) and combined
+Sentinel-2 satellite + weather risk scores, with deep soybean phenology models.
 """
 import json
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
+
+from backend.app.services.advisory import combined_score, soybean, weather_factors
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 TABLE_PATH = REPO_ROOT / "data" / "seed" / "advisory_table.json"
@@ -25,7 +31,8 @@ def find(cause: str) -> dict | None:
     return None
 
 
-def spray_plan(cause: str, zone_acres: float, method: str = "drone", product_index: int = 0) -> dict:
+def spray_plan(cause: str, zone_acres: float, method: str = "drone", product_index: int = 0,
+               weather_hourly: dict | None = None, target_date: date | str | None = None) -> dict:
     """Product, quantity and water for one zone. Non-pest causes return no chemical."""
     table = load_table()
     row = find(cause)
@@ -33,7 +40,7 @@ def spray_plan(cause: str, zone_acres: float, method: str = "drone", product_ind
         raise KeyError(f"No advisory row for cause '{cause}'")
 
     zone_ha = zone_acres * HA_PER_ACRE
-    plan = {
+    plan: dict[str, Any] = {
         "cause": row["cause"],
         "name_hi": row["name_hi"],
         "name_en": row["name_en"],
@@ -43,7 +50,13 @@ def spray_plan(cause: str, zone_acres: float, method: str = "drone", product_ind
         "source_urls": row["sources"],
         "verified_against_label": table["verified_against_label"],
         "spray": None,
+        "weather_feasibility": None,
     }
+
+    # Evaluate spray feasibility if weather data is provided
+    if weather_hourly and target_date:
+        plan["weather_feasibility"] = weather_factors.evaluate_spray_feasibility(weather_hourly, target_date)
+
     if not row["chemical"]:
         return plan
 
@@ -56,7 +69,7 @@ def spray_plan(cause: str, zone_acres: float, method: str = "drone", product_ind
         "dose_per_acre": round(chem["dose_per_ha"] * HA_PER_ACRE, 1),
         "method": method,
         "water_l": round(water_l, 1),
-        "knapsack_tanks": round(water_l / table["knapsack_tank_l"], 1) if method == "knapsack" else None,
+        "knapsack_tanks": round(water_l / table["knapsack_tank_l"]) if method == "knapsack" else None,
         "repeat_after_days": row["repeat_after_days"],
         "alternatives": [c["product"] for c in row["chemical"] if c is not chem],
     }

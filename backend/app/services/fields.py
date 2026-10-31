@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
 from backend.app.db.models import Field, FieldOwner
+from backend.app.services.advisory import combined_score, soybean, weather_factors
 from backend.app.services.mapping import geo, satellite
 from backend.app.services.risk import rules, surge, weather
 
@@ -85,6 +86,49 @@ def demo_walk(f: Field) -> list[tuple[float, float]]:
     return [tuple(p) for p in ring[:-1]]
 
 
+def combined_advisory(f: Field) -> dict:
+    """Fuses Sentinel-2 satellite anomaly data with local weather factors into a combined score."""
+    scan_res = scan(f)
+    days = _season_days(f)
+    cur_today = today()
+    start_str = str(cur_today - timedelta(days=7))
+    end_str = str(cur_today)
+    window_days = [d for d in days if start_str <= d["date"] <= end_str]
+    if not window_days:
+        window_days = [d for d in days if d["date"] <= end_str][-7:]
+    das = (cur_today - f.sowing_date).days
+
+    next_day = cur_today + timedelta(days=1)
+    if settings.demo_mode:
+        hourly = weather.hourly_archive(f.centroid_lat, f.centroid_lon, next_day, next_day)
+    else:
+        hourly = weather.hourly_forecast(f.centroid_lat, f.centroid_lon)
+
+    res = combined_score.compute_combined_advisory(
+        satellite_scan=scan_res,
+        weather_days=window_days,
+        das=das,
+        crop_type=f.crop or "soybean",
+        hourly_weather=hourly,
+        target_date=next_day,
+    )
+    return {"field_id": f.id, **res}
+
+
+def soybean_profile(f: Field) -> dict:
+    """Specialized ICAR-IISR soybean phenology, growth stage, ETL, and nutrition profile."""
+    das = (today() - f.sowing_date).days
+    days = _season_days(f)
+    cur_today = today()
+    start_str = str(cur_today - timedelta(days=7))
+    end_str = str(cur_today)
+    window_days = [d for d in days if start_str <= d["date"] <= end_str]
+    if not window_days:
+        window_days = [d for d in days if d["date"] <= end_str][-7:]
+    profile = soybean.get_soybean_profile(das=das, weather_days=window_days)
+    return {"field_id": f.id, **profile}
+
+
 def spray_window(f: Field, hours: int = 12) -> dict:
     """Hours in the next half-day when spraying is safe (no rain, low wind), starting 6 am the day after booking."""
     start = today() + timedelta(days=1)
@@ -101,8 +145,20 @@ def spray_window(f: Field, hours: int = 12) -> dict:
         slots.append({"time": t, "rain_mm": round(rain, 1), "wind_kmh": None if wind is None else round(wind, 1),
                       "ok": rain <= SPRAY_MAX_RAIN_MM and (wind is None or wind <= SPRAY_MAX_WIND_KMH)})
     ok = [s for s in slots if s["ok"]]
-    return {"date": str(start), "slots": slots, "best": ok[0]["time"] if ok else None,
-            "rule": f"rain <= {SPRAY_MAX_RAIN_MM} mm/h, wind <= {SPRAY_MAX_WIND_KMH:.0f} km/h"}
+
+    # Advanced agrometeorological feasibility factor
+    feasibility = weather_factors.evaluate_spray_feasibility(h, start, start_hour=6, duration_hours=hours)
+
+    return {
+        "date": str(start),
+        "slots": slots,
+        "best": ok[0]["time"] if ok else None,
+        "rule": f"rain <= {SPRAY_MAX_RAIN_MM} mm/h, wind <= {SPRAY_MAX_WIND_KMH:.0f} km/h",
+        "suitability": feasibility["overall_suitability"],
+        "advisory_hi": feasibility["advisory_hi"],
+        "advisory_en": feasibility["advisory_en"],
+        "mean_wind_kmh": feasibility["mean_wind_kmh"],
+    }
 
 
 def neighbours_within(f: Field, metres: float = 500) -> list[dict]:

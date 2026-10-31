@@ -1,4 +1,4 @@
-import type { AppEvent, CallResult, Case, DidiProfile, Field, IvrPrompt, Job, Located, Risk, Scan, TrackPoint } from "../types/api";
+import type { AppEvent, CallResult, Case, CombinedAdvisory, DidiProfile, Field, IvrPrompt, Job, Located, Risk, Scan, TrackPoint } from "../types/api";
 
 const BASE = "/api/v1";
 
@@ -24,6 +24,9 @@ export const api = {
   field: (id = "demo") => req<Field>(`/fields/${id}`),
   risk: (id = "demo") => req<Risk>(`/fields/${id}/risk`),
   scan: (id = "demo") => req<Scan>(`/fields/${id}/scan`),
+  combinedAdvisory: (id = "demo") => req<CombinedAdvisory>(`/fields/${id}/combined-advisory`),
+  sprayWindow: (id = "demo") => req<any>(`/fields/${id}/spray-window`),
+  soybeanProfile: (id = "demo") => req<any>(`/fields/${id}/soybean-profile`),
   demoWalk: (id = "demo") => req<[number, number][]>(`/fields/${id}/demo-walk`),
 
   createCase: (field_id = "demo") => post<Case>("/cases", { field_id }),
@@ -80,11 +83,20 @@ export function eventsSocket(onEvent: (e: AppEvent) => void): () => void {
         last = latest[0]?.id ?? 0;
       } else {
         const fresh = await req<AppEvent[]>(`/events?after=${last}`);
-        for (const e of fresh) { last = Math.max(last, e.id ?? last); if (!closed) onEvent(e); }
+        if (fresh.length) {
+          last = fresh[fresh.length - 1].id ?? last;
+          fresh.forEach((e) => onEvent(e));
+        }
       }
-    } catch { /* offline or API restarting: try again next tick */ }
-    if (!closed) timer = setTimeout(poll, POLL_MS);
+    } catch {
+      // transient network hiccup; keep polling
+    } finally {
+      if (!closed) timer = setTimeout(poll, POLL_MS);
+    }
   };
   poll();
-  return () => { closed = true; clearTimeout(timer); };
+  return () => {
+    closed = true;
+    clearTimeout(timer);
+  };
 }

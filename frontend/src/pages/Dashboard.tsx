@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ExternalLink, Phone, PhoneCall, PhoneIncoming, Plus, RotateCcw, Volume2 } from "lucide-react";
+import { ExternalLink, Phone, PhoneCall, PhoneIncoming, Plus, RotateCcw, Volume2, ShieldAlert, Sprout } from "lucide-react";
 import EvidenceCard from "../components/EvidenceCard";
 import FieldMap from "../components/FieldMap";
 import { ErrorNotice, Skeleton, useAsync } from "../components/common";
@@ -40,6 +40,8 @@ export default function Dashboard() {
   const fieldQ = useAsync(() => api.field(), []);
   const riskQ = useAsync(() => api.risk(), []);
   const scanQ = useAsync(() => api.scan(), []);
+  const combinedQ = useAsync(() => api.combinedAdvisory(), []);
+  const soybeanQ = useAsync(() => api.soybeanProfile(), []);
   const [kase, setKase] = useState<Case | null>(null);
   const [events, setEvents] = useState<AppEvent[]>([]);
   const [prompt, setPrompt] = useState<IvrPrompt | null>(null);
@@ -104,6 +106,8 @@ export default function Dashboard() {
 
   const today = riskQ.data?.days[0];
   const field = fieldQ.data;
+  const combined = combinedQ.data;
+  const soy = soybeanQ.data;
 
   return (
     <main className="dash">
@@ -113,7 +117,17 @@ export default function Dashboard() {
           <span className="body-6">{field.farmer.name} · Khasra {field.khasra}, {field.farmer.village} · soybean ·{" "}
             <span className="num">{t("dash.crop_age", { days: today?.das ?? "-" }, LANG)}</span></span>
         )}
+        {soy && (
+          <span className="caption-5" style={{ background: "rgba(34, 197, 94, 0.12)", color: "#166534", padding: "2px 8px", borderRadius: "12px", fontWeight: 600 }}>
+            🌱 {soy.variety} · {soy.current_stage.code} ({soy.current_stage.name_hi})
+          </span>
+        )}
         {today && <span className={`chip band-${today.band}`}>{causeName(today.top, LANG)} <span className="num">{Math.round(today.score)}</span></span>}
+        {combined && (
+          <span className={`chip band-${combined.band === 'critical' || combined.band === 'high' ? 'high' : combined.band}`} title={combined.narrative.en}>
+            Fused Score: <span className="num">{Math.round(combined.score)}/100</span> ({combined.band.toUpperCase()})
+          </span>
+        )}
         {riskQ.data && (
           <figure className="row" style={{ margin: 0 }} aria-label={t("dash.risk", {}, LANG)}>
             <div className="spark" aria-hidden="true">
@@ -137,8 +151,87 @@ export default function Dashboard() {
       </section>
 
       <aside className="dash-side">
-        {(fieldQ.error || riskQ.error || scanQ.error) && <ErrorNotice error={(fieldQ.error || riskQ.error || scanQ.error)!} />}
+        {(fieldQ.error || riskQ.error || scanQ.error || combinedQ.error || soybeanQ.error) && (
+          <ErrorNotice error={(fieldQ.error || riskQ.error || scanQ.error || combinedQ.error || soybeanQ.error)!} />
+        )}
         {error && <ErrorNotice error={error} />}
+
+        {/* Fused Sentinel-2 & Weather Advisory Card */}
+        {combined && (
+          <section className="panel stack" style={{ borderLeft: "4px solid #ef4444", background: "rgba(239, 68, 68, 0.04)" }}>
+            <div className="row spread">
+              <div className="row" style={{ gap: "6px" }}>
+                <ShieldAlert size={18} color="#ef4444" aria-hidden="true" />
+                <h2 className="title-3" style={{ margin: 0 }}>
+                  Fused Sentinel + Weather Advisory
+                </h2>
+              </div>
+              <span className={`chip band-${combined.band === 'critical' ? 'high' : combined.band}`}>
+                <span className="num">{Math.round(combined.score)}</span>/100 {combined.band.toUpperCase()}
+              </span>
+            </div>
+            <p className="body-6" style={{ margin: "2px 0", fontWeight: 600 }}>
+              {combined.narrative.en}
+            </p>
+            <div className="row" style={{ gap: "6px", flexWrap: "wrap" }}>
+              <span className="caption-5" style={{ background: "rgba(0,0,0,0.06)", padding: "2px 6px", borderRadius: "4px" }}>
+                🛰️ Satellite: {combined.components.satellite.pattern} ({combined.components.satellite.flagged_acres} ac, NDRE Z={combined.components.satellite.z_ndre})
+              </span>
+              <span className="caption-5" style={{ background: "rgba(0,0,0,0.06)", padding: "2px 6px", borderRadius: "4px" }}>
+                🌤️ Weather: Vector Risk {Math.round(combined.components.weather.vector_dispersal_factor * 100)}% ({combined.components.weather.spray_feasibility?.mean_wind_kmh ?? 5.7} km/h wind)
+              </span>
+              <span className="caption-5" style={{ background: "rgba(0,0,0,0.06)", padding: "2px 6px", borderRadius: "4px" }}>
+                ⚡ Synergy: +{Math.round((combined.synergy_multiplier - 1.0) * 100)}% joint boost
+              </span>
+            </div>
+            <p className="caption-5" style={{ margin: "2px 0 0", color: "#166534", fontWeight: 500 }}>
+              🎯 Recommendation: {combined.action.en}
+            </p>
+          </section>
+        )}
+
+        {/* Soybean Phenology & ICAR-IISR Specialist Card */}
+        {soy && (
+          <section className="panel stack" style={{ borderLeft: "4px solid #16a34a", background: "rgba(22, 163, 74, 0.04)" }}>
+            <div className="row spread">
+              <div className="row" style={{ gap: "6px" }}>
+                <Sprout size={18} color="#16a34a" aria-hidden="true" />
+                <h2 className="title-3" style={{ margin: 0 }}>
+                  Soybean Phenology & ICAR Guide
+                </h2>
+              </div>
+              <span className="chip" style={{ background: "#dcfce7", color: "#166534", fontWeight: 600 }}>
+                {soy.current_stage.code} ({soy.current_stage.water_sensitivity.toUpperCase()} SENSITIVITY)
+              </span>
+            </div>
+            <p className="body-6" style={{ margin: "2px 0" }}>
+              <strong>{soy.current_stage.name_en}</strong> ({soy.current_stage.name_hi})
+              — <span className="num">{soy.current_stage.days_remaining_in_stage}</span> days left in stage.
+            </p>
+            {soy.foliar_nutrition && (
+              <div style={{ background: "rgba(0,0,0,0.04)", padding: "4px 8px", borderRadius: "4px", margin: "2px 0" }}>
+                <span className="caption-5" style={{ fontWeight: 600, color: "#15803d" }}>
+                  🌿 Nutrition: {soy.foliar_nutrition.product} @ {soy.foliar_nutrition.dose}
+                </span>
+                <div className="caption-5" style={{ color: "#374151" }}>
+                  {soy.foliar_nutrition.purpose_en}
+                </div>
+              </div>
+            )}
+            {soy.girdle_beetle_assessment && (
+              <div className="row spread" style={{ fontSize: "0.8rem", marginTop: "2px" }}>
+                <span>🪲 Girdle Beetle (चक्र भृंग) Risk:</span>
+                <span className={`chip band-${soy.girdle_beetle_assessment.band}`}>
+                  <span className="num">{Math.round(soy.girdle_beetle_assessment.score)}%</span> ({soy.girdle_beetle_assessment.band.toUpperCase()})
+                </span>
+              </div>
+            )}
+            <p className="caption-5" style={{ margin: "2px 0 0", color: "#6b7280" }}>
+              💡 Pollinator Protection: Avoid chemical sprays during 10 AM - 3 PM bloom hours.
+            </p>
+          </section>
+        )}
+
         {scanQ.data && (
           <p className="caption-5 num">Sentinel-2 {scanQ.data.scene_date}: {scanQ.data.summary.cells_flagged}/{scanQ.data.summary.cells_in_field} cells flagged,
             {" "}{scanQ.data.summary.flagged_acres} acre, {scanQ.data.summary.pattern}</p>

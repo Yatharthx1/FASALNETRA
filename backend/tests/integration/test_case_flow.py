@@ -24,6 +24,19 @@ async def test_risk_returns_15_days_with_drivers(client):
     assert r["days"][0]["causes"]["yellow_mosaic"]["drivers"]
 
 
+async def test_combined_advisory_endpoint(client):
+    r = await client.get(f"{API}/fields/demo/combined-advisory")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["field_id"] == "demo"
+    assert "score" in data
+    assert data["band"] in ("safe", "watch", "high", "critical")
+    assert data["primary_cause"] == "yellow_mosaic"
+    assert data["components"]["satellite"]["flagged_cells"] > 0
+    assert data["components"]["weather"]["vector_dispersal_factor"] > 0
+    assert data["action"]["code"] in ("targeted_spray", "trap_scout")
+
+
 async def test_new_case_gets_flagged_target_cells(client):
     case = await _case(client)
     assert 1 <= len(case["target_cells"]) <= 3
