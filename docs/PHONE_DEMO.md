@@ -1,5 +1,22 @@
 # Phone demo (real Twilio calls + SMS link on the farmer's phone)
 
+## Live deployment (AWS)
+
+- Server: EC2 `fasalnetra-api` (`i-087d8d71e4ae857fe`, t3.micro, ap-south-1), fixed IP 13.205.168.88
+- URL: https://13-205-168-88.sslip.io (Caddy, automatic HTTPS): `/` dashboard, `/walk` farmer, `/didi` Didi, `/call` console
+- Twilio number: "A call comes in" = `POST https://13-205-168-88.sslip.io/api/v1/ivr/webhook`,
+  "Call status changes" = `POST https://13-205-168-88.sslip.io/api/v1/ivr/status`
+- Secrets: AWS Console > Systems Manager > Session Manager > start a session on `fasalnetra-api`, then
+  `sudo nano /opt/fasalnetra/.env.server` (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER,
+  DEMO_FARMER_PHONE, VISION_PROVIDER, SMS_LINK_SIGNING_SECRET; not PUBLIC_BASE_URL) and
+  `cd /opt/fasalnetra && sudo ./deploy/aws/run.sh 13-205-168-88.sslip.io`
+- Redeploy code: build a `git archive` tarball, upload to the private bucket `fasalnetra-deploy-323708468843`,
+  and run the same script through SSM (no SSH needed)
+- Optional Vercel: import the repo with root `FASALNETRA/frontend`; `vercel.json` forwards `/api` and `/uploads`
+  here. Set `SMS_LINK_BASE_URL=https://<vercel-site>/walk` in `.env.server` to send farmers there.
+
+The sections below describe the laptop + tunnel setup.
+
 One laptop runs the backend. One HTTPS tunnel to port 8000 carries everything the phone needs:
 Twilio webhooks, the SMS link page (`/walk`, the camera needs HTTPS) and Drone Didi's app (`/didi`).
 
