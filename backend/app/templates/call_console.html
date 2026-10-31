@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FasalNetra · IVR Call Console</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --primary: #10b981;
+      --primary-hover: #059669;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }
+    .container { width: 100%; max-width: 640px; }
+    .header { text-align: center; margin-bottom: 30px; }
+    .header h1 { font-size: 28px; font-weight: 700; color: #fff; display: flex; align-items: center; justify-content: center; gap: 10px; }
+    .header p { color: var(--text-muted); margin-top: 8px; font-size: 15px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 28px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); margin-bottom: 24px; }
+    .form-group { margin-bottom: 20px; }
+    label { display: block; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 8px; }
+    input[type="text"] { width: 100%; background: #0f172a; border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; color: #fff; font-size: 18px; font-weight: 500; outline: none; transition: border-color 0.2s; }
+    input[type="text"]:focus { border-color: var(--primary); }
+    .btn-call { width: 100%; background: var(--primary); color: #fff; border: none; border-radius: 12px; padding: 16px; font-size: 17px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; transition: background 0.2s, transform 0.1s; }
+    .btn-call:hover { background: var(--primary-hover); }
+    .btn-call:active { transform: scale(0.98); }
+    .btn-call:disabled { opacity: 0.6; cursor: not-allowed; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+    .badge-idle { background: #334155; color: #94a3b8; }
+    .badge-active { background: rgba(16, 185, 129, 0.2); color: #10b981; animation: pulse 2s infinite; }
+    .badge-completed { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+    .monitor-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .step-tracker { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+    .step-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #0f172a; border-radius: 8px; border: 1px solid var(--border); }
+    .step-label { font-size: 14px; font-weight: 500; color: var(--text-muted); }
+    .step-value { font-size: 14px; font-weight: 600; color: #fff; }
+    .step-active { border-color: var(--primary); background: rgba(16, 185, 129, 0.05); }
+    .log-box { margin-top: 16px; background: #020617; border-radius: 8px; padding: 12px 16px; font-family: monospace; font-size: 13px; color: #38bdf8; max-height: 120px; overflow-y: auto; }
+    .farmer-card { background: rgba(16, 185, 129, 0.1); border: 1px solid var(--primary); border-radius: 12px; padding: 16px; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🌱 FasalNetra Call Console</h1>
+      <p>Initiate outbound IVR onboarding and advisory calls from your dashboard</p>
+    </div>
+
+    <!-- Call Trigger Card -->
+    <div class="card">
+      <div class="form-group">
+        <label for="phoneInput">Destination Phone Number (E.164)</label>
+        <input type="text" id="phoneInput" value="+918839643926" placeholder="+91XXXXXXXXXX">
+      </div>
+      <button class="btn-call" id="callBtn" onclick="triggerCall()">
+        <span id="btnIcon">📞</span>
+        <span id="btnText">Make Phone Call</span>
+      </button>
+      <div id="callMsg" style="margin-top: 12px; font-size: 14px; text-align: center; color: var(--text-muted);"></div>
+    </div>
+
+    <!-- Live Call Monitor -->
+    <div class="card" id="monitorCard">
+      <div class="monitor-header">
+        <h2 style="font-size: 16px; font-weight: 600;">Live Session Telemetry</h2>
+        <span class="badge badge-idle" id="statusBadge">Idle</span>
+      </div>
+
+      <div class="step-tracker" id="stepList">
+        <div class="step-item" id="step-welcome"><span class="step-label">1. Language (भाषा)</span><span class="step-value" id="val-welcome">—</span></div>
+        <div class="step-item" id="step-crop"><span class="step-label">2. Crop (मुख्य फसल)</span><span class="step-value" id="val-crop">—</span></div>
+        <div class="step-item" id="step-sowing_date"><span class="step-label">3. Sowing Date (बोवनी के दिन)</span><span class="step-value" id="val-sowing_date">—</span></div>
+        <div class="step-item" id="step-pincode"><span class="step-label">4. PIN Code (पिन कोड)</span><span class="step-value" id="val-pincode">—</span></div>
+        <div class="step-item" id="step-village"><span class="step-label">5. Village (गांव)</span><span class="step-value" id="val-village">—</span></div>
+        <div class="step-item" id="step-neighbor_crop"><span class="step-label">6. Neighbor Crop (पड़ोसी फसल)</span><span class="step-value" id="val-neighbor_crop">—</span></div>
+        <div class="step-item" id="step-grass_border"><span class="step-label">7. Grassy Border (मेड़ पर घास)</span><span class="step-value" id="val-grass_border">—</span></div>
+      </div>
+
+      <div id="farmerProfile" style="display: none;" class="farmer-card">
+        <div style="font-weight: 600; color: #10b981; margin-bottom: 6px;">✓ Farmer Successfully Registered!</div>
+        <div id="farmerDetails" style="font-size: 14px; color: #e2e8f0; line-height: 1.5;"></div>
+      </div>
+
+      <div class="log-box" id="statusLog">System ready. Enter phone number and click Make Phone Call.</div>
+    </div>
+  </div>
+
+  <script>
+    let pollInterval = null;
+
+    async function triggerCall() {
+      const phone = document.getElementById('phoneInput').value.trim();
+      const btn = document.getElementById('callBtn');
+      const msg = document.getElementById('callMsg');
+      const log = document.getElementById('statusLog');
+
+      if (!phone) {
+        alert('Please enter a phone number!');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.style.opacity = '0.6';
+      msg.textContent = 'Calling Twilio telecom switch...';
+      log.textContent = `[${new Date().toLocaleTimeString()}] Initiating outbound call to ${phone}...`;
+
+      try {
+        const res = await fetch(`/api/v1/ivr/trigger-call?phone=${encodeURIComponent(phone)}`, {
+          method: 'POST'
+        });
+        const data = await res.json();
+
+        if (res.ok && data.status === 'call_initiated') {
+          msg.style.color = '#10b981';
+          msg.textContent = `Call initiated! Call SID: ${data.call_sid}. Your phone will ring in 2-5 seconds.`;
+          log.textContent = `[${new Date().toLocaleTimeString()}] Ringing initiated! Call SID: ${data.call_sid}`;
+          startPolling(phone);
+        } else {
+          msg.style.color = '#ef4444';
+          msg.textContent = data.detail || 'Failed to place call. Check Twilio credentials/tunnel.';
+          btn.disabled = false;
+          btn.style.opacity = '1';
+        }
+      } catch (err) {
+        msg.style.color = '#ef4444';
+        msg.textContent = 'Error connecting to backend: ' + err.message;
+        btn.disabled = false;
+        btn.style.opacity = '1';
+      }
+    }
+
+    function startPolling(phone) {
+      if (pollInterval) clearInterval(pollInterval);
+      pollInterval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/v1/ivr/session/${encodeURIComponent(phone)}`);
+          if (!res.ok) return;
+          const data = await res.json();
+
+          const badge = document.getElementById('statusBadge');
+          const sess = data.session;
+          const farmer = data.farmer;
+
+          if (sess) {
+            if (sess.status === 'in_progress') {
+              badge.className = 'badge badge-active';
+              badge.textContent = `Active (${sess.current_step})`;
+            } else if (sess.status === 'completed') {
+              badge.className = 'badge badge-completed';
+              badge.textContent = 'Completed';
+              document.getElementById('callBtn').disabled = false;
+              document.getElementById('callBtn').style.opacity = '1';
+              clearInterval(pollInterval);
+            }
+
+            // Update answers
+            const ans = sess.answers || {};
+            if (ans.welcome) document.getElementById('val-welcome').textContent = ans.welcome === 'hi' ? 'हिंदी (Hindi)' : 'मराठी';
+            if (ans.crop) document.getElementById('val-crop').textContent = ans.crop;
+            if (ans.sowing_date) document.getElementById('val-sowing_date').textContent = ans.sowing_date;
+            if (ans.pincode) document.getElementById('val-pincode').textContent = ans.pincode;
+            if (ans.village) document.getElementById('val-village').textContent = ans.village;
+            if (ans.neighbor_crop) document.getElementById('val-neighbor_crop').textContent = ans.neighbor_crop;
+            if (ans.grass_border) document.getElementById('val-grass_border').textContent = ans.grass_border;
+
+            // Highlight current step
+            document.querySelectorAll('.step-item').forEach(el => el.classList.remove('step-active'));
+            const activeEl = document.getElementById(`step-${sess.current_step}`);
+            if (activeEl) activeEl.classList.add('step-active');
+          }
+
+          if (farmer && farmer.status === 'registered') {
+            const card = document.getElementById('farmerProfile');
+            card.style.display = 'block';
+            document.getElementById('farmerDetails').innerHTML = `
+              <strong>Phone:</strong> ${data.phone}<br>
+              <strong>Village:</strong> ${farmer.village || 'N/A'}<br>
+              <strong>Crop:</strong> ${farmer.crop || 'N/A'} (Age: ${farmer.sowing_date_bracket || 'N/A'})<br>
+              <strong>Status:</strong> ${farmer.status}
+            `;
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }, 1500);
+    }
+  </script>
+</body>
+</html>
