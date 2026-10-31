@@ -1,13 +1,20 @@
-﻿export default function App() {
+import { lazy, Suspense } from "react";
+import { ErrorBoundary, Skeleton } from "./components/common";
+
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Walk = lazy(() => import("./pages/Walk"));
+const Didi = lazy(() => import("./pages/Didi"));
+
+// Three surfaces, no router library needed: the SMS link opens /walk, Drone Didi uses /didi, judges see /.
+const ROUTES: Record<string, React.ComponentType> = { "/walk": Walk, "/didi": Didi };
+
+export default function App() {
+  const Page = ROUTES[location.pathname.replace(/\/$/, "")] ?? Dashboard;
   return (
-    <main className="app-shell">
-      <p className="eyebrow">AI Manthan 2.0 · Hackathon demo</p>
-      <h1>FasalNetra</h1>
-      <p>
-        Weather tells us when. Traps and the guided field walk tell us where.
-        Vision AI helps identify what needs attention.
-      </p>
-      <p className="status">Frontend scaffold is running.</p>
-    </main>
+    <ErrorBoundary>
+      <Suspense fallback={<main className="walk"><Skeleton height={320} /></main>}>
+        <Page />
+      </Suspense>
+    </ErrorBoundary>
   );
 }
