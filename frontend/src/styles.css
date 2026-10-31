@@ -1,0 +1,46 @@
+﻿:root {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #17251b;
+  background: #f4f7f1;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+.app-shell {
+  max-width: 900px;
+  margin: 10vh auto;
+  padding: 32px;
+}
+
+.eyebrow {
+  color: #47734f;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin-bottom: 12px;
+  font-size: clamp(2.5rem, 8vw, 5rem);
+}
+
+.status {
+  display: inline-block;
+  margin-top: 20px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: #dcebdc;
+  color: #1c5c2b;
+  font-weight: 600;
+}

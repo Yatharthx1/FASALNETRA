@@ -1,0 +1,39 @@
+﻿# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Local databases and runtime files
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# User uploads and generated data (keep folder placeholders)
+data/uploads/*
+!data/uploads/.gitkeep
+backend/data/tts-cache/
+artifacts/*
+!artifacts/**/
+!artifacts/**/.gitkeep
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
