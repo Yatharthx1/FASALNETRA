@@ -44,9 +44,10 @@ class Settings(BaseSettings):
     ivr_repeat_digit: str = "9"
     ivr_callback_sla_seconds: int = 30
 
-    # Paths and links. The SMS link opens the frontend's /walk page with a signed case token.
+    # Paths and links. The SMS link opens the frontend's /walk page with a signed case token;
+    # blank = PUBLIC_BASE_URL/walk (the backend serves the built frontend, so the phone needs only one tunnel).
     audio_prompt_dir: str = str(REPO_ROOT / "frontend" / "public" / "audio" / "hi")
-    sms_link_base_url: str = "http://localhost:5173/walk"
+    sms_link_base_url: str = ""
     sms_link_signing_secret: str = "dev-only-change-me"
     sms_link_token_ttl_minutes: int = 1440
 
@@ -71,6 +72,10 @@ class Settings(BaseSettings):
     didi_tank_l: float = 10.0
     didi_base_lon: float = 75.1180
     didi_base_lat: float = 24.0990
+
+    @property
+    def walk_link_base(self) -> str:
+        return self.sms_link_base_url or f"{self.public_base_url.rstrip('/')}/walk"
 
     @property
     def twilio_enabled(self) -> bool:

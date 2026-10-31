@@ -44,7 +44,7 @@ def read_token(token: str, now: float | None = None) -> int:
 
 
 def walk_link(case_id: int) -> str:
-    return f"{settings.sms_link_base_url}?t={make_token(case_id)}"
+    return f"{settings.walk_link_base}?t={make_token(case_id)}"
 
 
 def _client():

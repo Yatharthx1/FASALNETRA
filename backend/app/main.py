@@ -2,9 +2,9 @@ import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.app.api.v1.router import api_router
@@ -49,10 +49,6 @@ def create_app() -> FastAPI:
     if audio_path.exists():
         app.mount("/audio", StaticFiles(directory=str(audio_path)), name="audio")
 
-    @app.get("/", tags=["root"])
-    async def root() -> dict[str, str]:
-        return {"name": settings.app_name, "status": "running", "docs": "/docs"}
-
     @app.get("/call", response_class=HTMLResponse, tags=["ivr"])
     async def call_console() -> HTMLResponse:
         """Web interface to trigger outbound calls and monitor live IVR answers."""
@@ -60,6 +56,23 @@ def create_app() -> FastAPI:
         if template_path.exists():
             return HTMLResponse(content=template_path.read_text(encoding="utf-8"))
         return HTMLResponse(content="<h1>Call console template missing</h1>")
+
+    # Built frontend (npm run build) served from the API's own origin, so one HTTPS tunnel gives the phone
+    # the Twilio webhooks, the SMS-link page (/walk, camera needs HTTPS) and Drone Didi's app (/didi).
+    dist = REPO_ROOT / "frontend" / "dist"
+
+    @app.get("/{full_path:path}", include_in_schema=False, response_model=None)
+    async def frontend(full_path: str) -> FileResponse | dict[str, str]:
+        if full_path.startswith(("api/", "uploads/", "audio/")):
+            raise HTTPException(404, "Not found")
+        if not (dist / "index.html").exists():
+            if full_path:
+                raise HTTPException(404, "Not found")
+            return {"name": settings.app_name, "status": "running", "docs": "/docs"}
+        asset = (dist / full_path).resolve()
+        if full_path and asset.is_file() and asset.is_relative_to(dist.resolve()):
+            return FileResponse(asset)
+        return FileResponse(dist / "index.html")   # SPA routes: /, /walk, /didi
 
     return app
 

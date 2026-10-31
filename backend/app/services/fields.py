@@ -111,7 +111,11 @@ def neighbours_within(f: Field, metres: float = 500) -> list[dict]:
 
 
 async def seed_demo(db: AsyncSession) -> None:
-    if await db.get(Field, "demo"):
+    existing = await db.get(Field, "demo")
+    if existing:
+        if existing.farmer.phone != settings.demo_farmer_phone:   # DEMO_FARMER_PHONE changed: calls go to the new phone
+            existing.farmer.phone = settings.demo_farmer_phone
+            await db.commit()
         return
     data = json.loads(settings.demo_field_geojson.read_text(encoding="utf-8"))
     hero = next(x for x in data["features"] if x["properties"].get("role") == "hero")
