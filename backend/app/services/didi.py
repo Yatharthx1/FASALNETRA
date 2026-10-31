@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
-from backend.app.db.models import Case, DidiJob, Farmer, Field
+from backend.app.db.models import Case, DidiJob, FieldOwner, Field
 from backend.app.services import advisory, fields, missions
 from backend.app.services.mapping import geo
 
@@ -140,7 +140,7 @@ async def seed_demo_tickets(db: AsyncSession) -> None:
             continue
         p = feat["properties"]
         if await db.get(Field, fid) is None:
-            farmer = Farmer(name=p["owner"], phone=f"+91000000{spec['khasra'].replace('/', '')[:4]:0>4}", village="Rampura")
+            farmer = FieldOwner(name=p["owner"], phone=f"+91000000{spec['khasra'].replace('/', '')[:4]:0>4}", village="Rampura")
             db.add(farmer)
             await db.flush()
             c = geo.to_m(feat["geometry"]).centroid

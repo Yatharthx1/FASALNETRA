@@ -27,6 +27,8 @@ function eventLine(e: AppEvent): string {
     case "didi_booked": return `Drone Didi booked (${p.mode}), ${p.minutes} min flight, best ${String(p.best ?? "-").slice(11, 16)}`;
     case "didi_complete": return `Spray done. ${p.acres_not_sprayed} acre not sprayed, ${p.chemical_saved} ${p.unit ?? ""} saved`;
     case "human_requested": return "Farmer asked for a human expert";
+    case "booking_skipped": return `Drone Didi not booked: ${p.reason}`;
+    case "followup_recorded": return `Follow-up answer: ${String(p.feedback).replace(/_/g, " ")}`;
     default: return e.type.replace(/_/g, " ");
   }
 }
@@ -75,10 +77,10 @@ export default function Dashboard() {
     try { await fn(); } catch (e) { setError((e as Error).message); }
   }
 
-  const press = (digit: string) => prompt && kase && !prompt.hangup && run(async () => {
-    const next = await api.keypad(kase.id, prompt.step, digit);
+  const press = (digit: string) => prompt && !prompt.is_completed && run(async () => {
+    const next = await api.keypad(prompt.phone, digit);
     setPrompt(next);
-    speak(next.say_hi);
+    speak(next.prompt_text);
   });
 
   const today = riskQ.data?.days[0];
@@ -129,7 +131,7 @@ export default function Dashboard() {
               <Plus size={16} aria-hidden="true" /> {t("dash.new_case", {}, LANG)}
             </button>
             <button type="button" className="btn" disabled={!kase} onClick={() => run(async () => {
-              const r = await api.warningCall(kase!.id); setPrompt(r.first_prompt); speak(r.first_prompt.say_hi); })}>
+              const r = await api.warningCall(kase!.id); setPrompt(r.first_prompt); speak(r.first_prompt.prompt_text); })}>
               <PhoneCall size={16} aria-hidden="true" /> {t("dash.warning_call", {}, LANG)}
             </button>
             <button type="button" className="btn" disabled={!kase} onClick={() => run(async () => { await api.traps(kase!.id, DEMO_TRAPS); })}>
@@ -139,7 +141,7 @@ export default function Dashboard() {
               {t("dash.build_evidence", {}, LANG)}
             </button>
             <button type="button" className="btn" disabled={!kase?.evidence} onClick={() => run(async () => {
-              const r = await api.resultCall(kase!.id); setPrompt(r.first_prompt); speak(r.first_prompt.say_hi); })}>
+              const r = await api.resultCall(kase!.id); setPrompt(r.first_prompt); speak(r.first_prompt.prompt_text); })}>
               <Phone size={16} aria-hidden="true" /> {t("dash.result_call", {}, LANG)}
             </button>
           </div>
@@ -150,14 +152,14 @@ export default function Dashboard() {
         {prompt && (
           <section className="panel stack" aria-labelledby="phone-title">
             <div className="row spread">
-              <h2 id="phone-title" className="title-3">{t("dash.keypad", {}, LANG)} · <span className="caption-5">{prompt.step}</span></h2>
-              <button type="button" className="btn btn-icon" aria-label="Play prompt" onClick={() => speak(prompt.say_hi)}><Volume2 size={18} /></button>
+              <h2 id="phone-title" className="title-3">{t("dash.keypad", {}, LANG)} · <span className="caption-5">{prompt.current_step}</span></h2>
+              <button type="button" className="btn btn-icon" aria-label="Play prompt" onClick={() => speak(prompt.prompt_text)}><Volume2 size={18} /></button>
             </div>
-            <p className="ivr-say" aria-live="polite">{prompt.say_hi}</p>
+            <p className="ivr-say" aria-live="polite">{prompt.prompt_text}</p>
             <div className="keypad">
               {KEYS.map((k, i) => k ? (
-                <button key={k} type="button" className={`btn num ${prompt.options[k] ? "btn-primary" : ""}`} disabled={prompt.hangup}
-                  aria-label={prompt.options[k] ? `${k}: ${prompt.options[k]}` : k} onClick={() => press(k)}>{k}</button>
+                <button key={k} type="button" className={`btn num ${prompt.valid_digits.includes(k) ? "btn-primary" : ""}`} disabled={prompt.is_completed}
+                  onClick={() => press(k)}>{k}</button>
               ) : <span key={`gap${i}`} />)}
             </div>
           </section>
@@ -165,7 +167,7 @@ export default function Dashboard() {
 
         {kase?.evidence && field && (
           <EvidenceCard evidence={kase.evidence} zoneAcres={kase.zone_acres} fieldAcres={field.area_acres} lang={LANG}
-            onBook={() => run(async () => { await api.keypad(kase.id, "result", "1"); const p = await api.keypad(kase.id, "confirm_didi", "1"); setPrompt(p); })} />
+            onBook={() => run(async () => { await api.bookDidi(kase.id); })} />
         )}
         {kase?.evidence?.savings && (
           <p className="notice notice-ok body-6 num">

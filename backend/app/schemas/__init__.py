@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.app.schemas.ivr import IVRRegisteredSimulateResponse
+
 
 class FarmerOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -133,27 +135,11 @@ class LinkOut(BaseModel):
     simulated: bool
 
 
-class IvrIn(BaseModel):
-    step: str
-    digit: str | None = None
-
-
-class IvrOut(BaseModel):
-    """What the farmer hears and which keys work; rendered as TwiML for Twilio or JSON for the web keypad."""
-    case_id: int
-    step: str
-    say_hi: str
-    audio: str | None = None
-    options: dict[str, str] = Field(default_factory=dict)
-    next_step: str | None = None
-    hangup: bool = False
-
-
 class CallOut(BaseModel):
     case_id: int
     simulated: bool
     call_sid: str | None
-    first_prompt: IvrOut
+    first_prompt: IVRRegisteredSimulateResponse
 
 
 class JobOut(BaseModel):

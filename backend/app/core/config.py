@@ -24,26 +24,34 @@ class Settings(BaseSettings):
     demo_mode: bool = True
     demo_date: date = date(2025, 8, 15)
     demo_farmer_name: str = "Ramesh-ji"
-    demo_farmer_phone: str = "+910000000000"
+    demo_farmer_phone: str = "+919876543210"
     demo_sowing_age_days: int = 40
     demo_field_geojson: Path = REPO_ROOT / "data" / "field-geojson" / "demo-field.geojson"
 
-    # Twilio: left blank -> calls and SMS are simulated and the web keypad drives the same flow
+    # Public tunnel / URL
+    public_base_url: str = "http://localhost:8000"
+
+    # Twilio Voice and SMS: left blank -> calls and SMS are simulated
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_phone_number: str = ""
-    public_base_url: str = ""
-    ivr_language: str = "hi-IN"
-    ivr_voice: str = "Polly.Aditi"
-    ivr_timeout_seconds: int = 8
+    twilio_validate_signature: bool = False
 
+    # IVR settings (flows live in services/communications/*_state_machine.py)
+    ivr_default_language: str = "hi-IN"
+    ivr_timeout_seconds: int = 8
+    ivr_max_reprompts: int = 1
+    ivr_repeat_digit: str = "9"
+    ivr_callback_sla_seconds: int = 30
+
+    # Paths and links. The SMS link opens the frontend's /walk page with a signed case token.
+    audio_prompt_dir: str = "frontend/public/audio/hi"
     sms_link_base_url: str = "http://localhost:5173/walk"
     sms_link_signing_secret: str = "dev-only-change-me"
     sms_link_token_ttl_minutes: int = 1440
 
     upload_dir: Path = REPO_ROOT / "data" / "uploads"
     waypoints_dir: Path = REPO_ROOT / "artifacts" / "waypoints"
-    audio_dir: Path = REPO_ROOT / "frontend" / "public" / "audio" / "hi"
 
     # Spray mission (agri drone defaults; check the operator's drone)
     drone_swath_m: float = 4.0
@@ -66,7 +74,7 @@ class Settings(BaseSettings):
 
     @property
     def twilio_enabled(self) -> bool:
-        return bool(self.twilio_account_sid and self.twilio_auth_token and self.twilio_phone_number and self.public_base_url)
+        return bool(self.twilio_account_sid and self.twilio_auth_token and self.twilio_phone_number)
 
 
 settings = Settings()

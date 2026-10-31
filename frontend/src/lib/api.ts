@@ -31,7 +31,7 @@ export const api = {
   caseByToken: (t: string) => req<Case>(`/cases/by-token?t=${encodeURIComponent(t)}`),
   warningCall: (id: number) => post<CallResult>(`/cases/${id}/warning-call`),
   resultCall: (id: number) => post<CallResult>(`/cases/${id}/result-call`),
-  keypad: (id: number, step: string, digit: string | null) => post<IvrPrompt>(`/ivr/web/${id}`, { step, digit }),
+  keypad: (phone: string, digit: string) => post<IvrPrompt>("/ivr/simulate/registered", { phone, digits: digit }),
   traps: (id: number, counts: number[]) => post<Case>(`/cases/${id}/traps`, { counts }),
   walk: (id: number, trail: [number, number][]) => post<Case>(`/cases/${id}/walk`, { trail }),
   evidence: (id: number) => post<Case>(`/cases/${id}/evidence`),

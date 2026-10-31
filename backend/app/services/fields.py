@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
-from backend.app.db.models import Farmer, Field
+from backend.app.db.models import FieldOwner, Field
 from backend.app.services.mapping import geo, satellite
 from backend.app.services.risk import rules, weather
 
@@ -116,9 +116,9 @@ async def seed_demo(db: AsyncSession) -> None:
     data = json.loads(settings.demo_field_geojson.read_text(encoding="utf-8"))
     hero = next(x for x in data["features"] if x["properties"].get("role") == "hero")
     p = hero["properties"]
-    farmer = (await db.execute(select(Farmer).where(Farmer.phone == settings.demo_farmer_phone))).scalar_one_or_none()
+    farmer = (await db.execute(select(FieldOwner).where(FieldOwner.phone == settings.demo_farmer_phone))).scalar_one_or_none()
     if farmer is None:
-        farmer = Farmer(name=settings.demo_farmer_name, phone=settings.demo_farmer_phone, village="Rampura")
+        farmer = FieldOwner(name=settings.demo_farmer_name, phone=settings.demo_farmer_phone, village="Rampura")
         db.add(farmer)
         await db.flush()
     c = shape(hero["geometry"]).centroid

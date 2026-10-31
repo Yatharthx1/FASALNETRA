@@ -52,7 +52,8 @@ export interface Case {
   zone: Geometry | null; zone_acres: number | null; evidence: Evidence | null; photos: Photo[];
 }
 
-export interface IvrPrompt { case_id: number; step: string; say_hi: string; options: Record<string, string>; next_step: string | null; hangup: boolean }
+/** One prompt of the IVR's registered-farmer flows (warning, result, followup), as the web keypad sees it. */
+export interface IvrPrompt { phone: string; flow: string; current_step: string; prompt_id: string; prompt_text: string; valid_digits: string[]; is_completed: boolean; message: string }
 export interface CallResult { case_id: number; simulated: boolean; call_sid: string | null; first_prompt: IvrPrompt }
 
 export interface Job {

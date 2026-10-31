@@ -47,9 +47,11 @@ async def test_full_demo_flow_ends_with_a_zone_only_spray(client):
     cid = case["id"]
 
     call = (await client.post(f"{API}/cases/{cid}/warning-call")).json()
-    assert call["simulated"] and "peela mosaic" in call["first_prompt"]["say_hi"]
-    assert (await client.post(f"{API}/ivr/web/{cid}", json={"step": "warning", "digit": "1"})).json()["step"] == "q0"
-    await client.post(f"{API}/ivr/web/{cid}", json={"step": "q0", "digit": "1"})
+    assert call["simulated"] and call["first_prompt"]["current_step"] == "warning_prompt"
+    phone = call["first_prompt"]["phone"]
+    pressed = (await client.post(f"{API}/ivr/simulate/registered", json={"phone": phone, "digits": "1"})).json()
+    assert pressed["current_step"] == "sms_dispatched"
+    await client.post(f"{API}/cases/{cid}/keypad", json={"answers": {"whitefly_under_leaves": True}})
     await client.post(f"{API}/cases/{cid}/traps", json={"counts": [3, 12, 5, 2]})
 
     for i, cell in enumerate(case["target_cells"]):
@@ -68,10 +70,9 @@ async def test_full_demo_flow_ends_with_a_zone_only_spray(client):
     assert ev["level"] == "high" and ev["action"] == "advise_spray"
 
     await client.post(f"{API}/cases/{cid}/result-call")
-    await client.post(f"{API}/ivr/web/{cid}", json={"step": "result", "digit": "1"})
     jobs_for_case = lambda js: [j for j in js if j["case_id"] == cid]  # noqa: E731
-    assert not jobs_for_case((await client.get(f"{API}/didi/jobs")).json())   # not booked before confirming
-    await client.post(f"{API}/ivr/web/{cid}", json={"step": "confirm_didi", "digit": "1"})
+    assert not jobs_for_case((await client.get(f"{API}/didi/jobs")).json())   # not booked before the key press
+    await client.post(f"{API}/ivr/simulate/registered", json={"phone": phone, "digits": "1"})
 
     job = jobs_for_case((await client.get(f"{API}/didi/jobs")).json())[0]
     assert job["mode"] == "spray" and job["route"]["passes"] >= 1

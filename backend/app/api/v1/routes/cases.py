@@ -3,8 +3,19 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
 from backend.app.api.deps import CaseDep, DbDep
-from backend.app.schemas import (CallOut, CaseCreate, CaseOut, IvrOut, JobOut, KeypadIn, LinkOut, PhotoOut,
-                                 TrapsIn, WalkIn)
+from backend.app.core.config import settings
+from backend.app.schemas import (
+    CallOut,
+    CaseCreate,
+    CaseOut,
+    JobOut,
+    KeypadIn,
+    LinkOut,
+    PhotoOut,
+    TrapsIn,
+    WalkIn,
+)
+from backend.app.schemas.ivr import IVRRegisteredSimulateResponse
 from backend.app.services import cases, communications, fields, vision
 
 router = APIRouter(prefix="/cases")
@@ -13,9 +24,12 @@ MAX_PHOTO_BYTES = 12 * 1024 * 1024
 PHOTO_KINDS = {"leaf_top", "leaf_under", "chewed", "trap"}
 
 
-def _prompt_out(case_id: int, p) -> IvrOut:
-    return IvrOut(case_id=case_id, step=p.step, say_hi=p.say_hi, options=p.options, next_step=p.next_step,
-                  hangup=p.hangup)
+def _call_out(case_id: int, call: dict) -> CallOut:
+    p = call["prompt"]
+    first = IVRRegisteredSimulateResponse(phone=call["phone"], flow=call["flow"], current_step=p["step"],
+                                          prompt_id=p["prompt_id"], prompt_text=p["prompt_text"],
+                                          valid_digits=p["valid_digits"], is_completed=p["hangup"], message="")
+    return CallOut(case_id=case_id, simulated=not settings.twilio_enabled, call_sid=call["call_sid"], first_prompt=first)
 
 
 @router.post("", response_model=CaseOut, status_code=status.HTTP_201_CREATED)
@@ -46,17 +60,16 @@ async def get_case(case: CaseDep) -> CaseOut:
 
 @router.post("/{case_id}/warning-call", response_model=CallOut)
 async def warning_call(case: CaseDep, db: DbDep) -> CallOut:
-    sent, first = await cases.warning_call(db, case)
-    return CallOut(case_id=case.id, simulated=sent.simulated, call_sid=sent.sid, first_prompt=_prompt_out(case.id, first))
+    return _call_out(case.id, await cases.warning_call(db, case))
 
 
 @router.post("/{case_id}/result-call", response_model=CallOut)
 async def result_call(case: CaseDep, db: DbDep) -> CallOut:
     try:
-        sent, first = await cases.result_call(db, case)
+        call = await cases.result_call(db, case)
     except cases.CaseStateError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
-    return CallOut(case_id=case.id, simulated=sent.simulated, call_sid=sent.sid, first_prompt=_prompt_out(case.id, first))
+    return _call_out(case.id, call)
 
 
 @router.post("/{case_id}/link", response_model=LinkOut)
@@ -114,7 +127,7 @@ async def build_evidence(case: CaseDep, db: DbDep) -> CaseOut:
 
 @router.post("/{case_id}/book-didi", response_model=JobOut, status_code=status.HTTP_201_CREATED)
 async def book_didi(case: CaseDep, db: DbDep) -> JobOut:
-    """Dashboard / web-keypad booking. Over the phone this happens only after the farmer presses 1 to confirm."""
+    """Dashboard booking. Over the phone this happens when the farmer presses 1 on the IVR result call."""
     try:
         return await cases.book_didi(db, case)
     except cases.CaseStateError as exc:

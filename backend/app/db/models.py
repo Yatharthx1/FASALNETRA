@@ -10,8 +10,9 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class Farmer(Base):
-    __tablename__ = "farmers"
+class FieldOwner(Base):
+    """Owner of a mapped field. The IVR farmer registry (onboarding answers) is models/farmer.py, joined by phone."""
+    __tablename__ = "field_owners"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(80))
@@ -24,7 +25,7 @@ class Field(Base):
     __tablename__ = "fields"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    farmer_id: Mapped[int] = mapped_column(ForeignKey("farmers.id"))
+    farmer_id: Mapped[int] = mapped_column(ForeignKey("field_owners.id"))
     khasra: Mapped[str] = mapped_column(String(20))
     crop: Mapped[str] = mapped_column(String(30), default="soybean")
     sowing_date: Mapped[date] = mapped_column(Date)
@@ -33,7 +34,7 @@ class Field(Base):
     centroid_lat: Mapped[float] = mapped_column(Float)
     centroid_lon: Mapped[float] = mapped_column(Float)
 
-    farmer: Mapped[Farmer] = relationship(lazy="joined")
+    farmer: Mapped[FieldOwner] = relationship(lazy="joined")
 
 
 class Case(Base):

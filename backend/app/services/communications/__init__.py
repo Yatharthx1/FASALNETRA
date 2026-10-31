@@ -1,4 +1,6 @@
-"""Twilio voice/SMS adapter and signed SMS links. Without Twilio credentials everything is simulated."""
+"""Twilio SMS adapter and signed SMS links. Without Twilio credentials SMS is simulated.
+
+Voice calls live in ivr_service.py and the *_state_machine.py flows."""
 import hashlib
 import hmac
 import logging
@@ -56,12 +58,3 @@ def send_sms(to: str, body: str) -> SendResult:
         return SendResult(simulated=True, sid=None)
     msg = _client().messages.create(to=to, from_=settings.twilio_phone_number, body=body)
     return SendResult(simulated=False, sid=msg.sid)
-
-
-def place_call(to: str, case_id: int, step: str) -> SendResult:
-    if not settings.twilio_enabled:
-        log.info("Call (simulated) to %s, case %s, step %s", to, case_id, step)
-        return SendResult(simulated=True, sid=None)
-    url = f"{settings.public_base_url}{settings.api_v1_prefix}/ivr/voice?case_id={case_id}&step={step}"
-    call = _client().calls.create(to=to, from_=settings.twilio_phone_number, url=url)
-    return SendResult(simulated=False, sid=call.sid)

@@ -1,4 +1,4 @@
-"""Case workflow: warning -> keypad -> SMS link -> grid walk + photos -> evidence -> advisory or Drone Didi."""
+"""Case workflow: warning call (IVR) -> SMS link -> grid walk + photos -> evidence -> advisory or Drone Didi."""
 import asyncio
 from collections import Counter
 from uuid import uuid4
@@ -7,9 +7,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
-from backend.app.db.models import Case, DidiJob, Photo
-from backend.app.services import advisory, communications, didi, evidence, fields, vision
-from backend.app.services.communications import ivr
+from backend.app.db.models import Case, DidiJob, Field, FieldOwner, Photo
+from backend.app.db.session import SessionLocal as IvrSessionLocal
+from backend.app.models.farmer import Farmer as IvrFarmer
+from backend.app.services import (
+    advisory,
+    communications,
+    didi,
+    evidence,
+    fields,
+    vision,
+)
+from backend.app.services.communications import ivr_service
+from backend.app.services.communications.registered_state_machine import (
+    get_registered_flow_config,
+)
 from backend.app.services.events import emit
 from backend.app.services.mapping import geo
 from backend.app.services.vision import knn
@@ -49,53 +61,62 @@ async def create(db: AsyncSession, field_id: str) -> Case:
     return case
 
 
-def _ivr_context(case: Case, risk_today: dict | None) -> dict:
-    ctx = {"farmer_name": case.field.farmer.name, "zone_acres": case.zone_acres, "evidence": case.evidence}
-    if risk_today:
-        top = risk_today["top"]
-        ctx["risk"] = {"cause": top, "drivers": risk_today["causes"][top]["drivers"]}
-    return ctx
+def _start_ivr_call(owner: FieldOwner, flow: str) -> dict:
+    """Place a registered-farmer call (warning / result) through the IVR in routes/ivr.py; return it with its first prompt."""
+    db = IvrSessionLocal()
+    try:
+        phone = ivr_service.clean_phone_number(owner.phone)
+        farmer = db.query(IvrFarmer).filter(IvrFarmer.phone == phone).first()
+        if farmer is None:   # field owner known from the khasra map but never onboarded by phone
+            farmer = IvrFarmer(phone=phone, name=owner.name, village=owner.village, status="registered")
+            db.add(farmer)
+        farmer.active_flow = flow
+        db.commit()
+        call = ivr_service.start_call(db, phone, flow)
+        call["prompt"] = get_registered_flow_config(flow, call["step"], farmer)
+        return call
+    finally:
+        db.close()
 
 
-async def warning_call(db: AsyncSession, case: Case) -> tuple[communications.SendResult, ivr.Prompt]:
-    r = await asyncio.to_thread(fields.risk, case.field)
-    first = ivr.warning(_ivr_context(case, r["days"][0]))
-    sent = communications.place_call(case.field.farmer.phone, case.id, "warning")
-    await emit(db, "call_placed", case.id, kind="warning", simulated=sent.simulated,
-               risk=r["days"][0]["score"], cause=r["days"][0]["top"])
-    return sent, first
+async def warning_call(db: AsyncSession, case: Case) -> dict:
+    today = (await asyncio.to_thread(fields.risk, case.field))["days"][0]
+    call = await asyncio.to_thread(_start_ivr_call, case.field.farmer, "warning")
+    await emit(db, "call_placed", case.id, kind="warning", simulated=not settings.twilio_enabled,
+               risk=today["score"], cause=today["top"])
+    return call
 
 
-async def result_call(db: AsyncSession, case: Case) -> tuple[communications.SendResult, ivr.Prompt]:
+async def result_call(db: AsyncSession, case: Case) -> dict:
     if not case.evidence:
         raise CaseStateError("no evidence yet")
-    first = ivr.result(_ivr_context(case, None))
-    sent = communications.place_call(case.field.farmer.phone, case.id, "result")
-    await emit(db, "call_placed", case.id, kind="result", simulated=sent.simulated)
-    return sent, first
+    call = await asyncio.to_thread(_start_ivr_call, case.field.farmer, "result")
+    await emit(db, "call_placed", case.id, kind="result", simulated=not settings.twilio_enabled)
+    return call
 
 
-async def ivr_step(db: AsyncSession, case: Case, step: str, digit: str | None) -> ivr.Prompt:
-    risk_today = None
-    if step == "warning" or step.startswith("q"):
-        risk_today = (await asyncio.to_thread(fields.risk, case.field))["days"][0]
-    prompt = ivr.handle(_ivr_context(case, risk_today), step, digit)
+async def open_case_for_phone(db: AsyncSession, phone: str) -> Case | None:
+    q = (select(Case).join(Field).join(FieldOwner).where(FieldOwner.phone == phone)
+         .order_by(Case.id.desc()).limit(1))
+    return (await db.execute(q)).scalars().first()
+
+
+async def on_ivr_action(db: AsyncSession, phone: str, step: str, digit: str | None, action: str) -> None:
+    """Side effects of a key press in the IVR's registered flows on the farmer's latest case."""
+    case = await open_case_for_phone(db, phone)
+    if case is None:
+        return
     if digit is not None:
         await emit(db, "key_pressed", case.id, step=step, digit=digit)
-    if prompt.answers:
-        case.keypad = {**case.keypad, **prompt.answers}
-        await db.commit()
-        await emit(db, "answer_saved", case.id, answers=prompt.answers)
-    for action in prompt.actions:
-        if action == "send_link":
-            await send_link(db, case)
-        elif action == "book_didi":
+    if action == "send_sms_link":
+        await send_link(db, case)
+    elif action == "confirm_drone_booking":
+        try:
             await book_didi(db, case)
-        elif action == "send_dose_sms":
-            await send_dose_sms(db, case)
-        elif action == "transfer_human":
-            await emit(db, "human_requested", case.id, step=step)
-    return prompt
+        except CaseStateError as exc:
+            await emit(db, "booking_skipped", case.id, reason=str(exc))
+    elif action.startswith("record_feedback_"):
+        await emit(db, "followup_recorded", case.id, feedback=action.removeprefix("record_feedback_"))
 
 
 async def send_link(db: AsyncSession, case: Case) -> tuple[str, communications.SendResult]:
@@ -208,16 +229,6 @@ async def build_evidence(db: AsyncSession, case: Case) -> Case:
         nb = fields.neighbours_within(f)
         await emit(db, "neighbours_warned", case.id, cause=ev["cause"], count=len(nb), fields=nb[:5])
     return case
-
-
-async def send_dose_sms(db: AsyncSession, case: Case) -> None:
-    s = case.evidence["plan"]["spray"]
-    plan = advisory.spray_plan(case.evidence["cause"], case.zone_acres or 0.1, method="knapsack")["spray"]
-    body = (f"FasalNetra ({case.evidence['plan']['source']}): {s['product']}. Sirf {case.zone_acres} acre: "
-            f"{plan['quantity']} {plan['unit']} dawa, {plan['water_l']} L paani ({plan['knapsack_tanks']} tanki). "
-            f"Dastane aur mask pehniye.")
-    sent = communications.send_sms(case.field.farmer.phone, body)
-    await emit(db, "sms_sent", case.id, kind="dose", simulated=sent.simulated)
 
 
 async def book_didi(db: AsyncSession, case: Case) -> DidiJob:

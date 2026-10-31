@@ -3,7 +3,6 @@ import pytest
 from shapely.geometry import Polygon, mapping
 
 from backend.app.services import advisory, communications, evidence, missions
-from backend.app.services.communications import ivr
 from backend.app.services.mapping import geo
 
 YMV_WEATHER = {"yellow_mosaic": 0.95, "fungal": 0.39, "chewing_damage": 0.45}
@@ -79,48 +78,6 @@ def test_uniform_signals_do_not_count_as_agreeing():
 def test_wording_is_never_certain():
     e = evidence.build(photo_ai=_photo("fungal", 0.5), das=40)
     assert e["wording"] == "shak"
-
-
-# --- voice menu -----------------------------------------------------------
-
-@pytest.fixture
-def ivr_case():
-    ev = evidence.build(photo_ai=_photo("yellow_mosaic"), trap_counts=[12], keypad={"whitefly_under_leaves": True},
-                        weather_scores=YMV_WEATHER, das=40, advisory_flags={"yellow_mosaic": True}, satellite=PATCH,
-                        zone_acres=0.4)
-    return {"farmer_name": "Ramesh-ji", "zone_acres": 0.4, "evidence": ev,
-            "risk": {"cause": "yellow_mosaic", "drivers": [{"hi": "7 din sookhe", "en": ""}, {"hi": "dhoop", "en": ""}]}}
-
-
-def test_key_1_on_warning_sends_link_and_starts_questions(ivr_case):
-    p = ivr.handle(ivr_case, "warning", "1")
-    assert p.step == "q0" and "send_link" in p.actions
-
-
-def test_answers_are_recorded_as_yes_no(ivr_case):
-    assert ivr.handle(ivr_case, "q0", "1").answers == {"whitefly_under_leaves": True}
-    assert ivr.handle(ivr_case, "q1", "2").answers == {"holes_in_leaves": False}
-
-
-def test_wrong_key_repeats_same_prompt(ivr_case):
-    p = ivr.handle(ivr_case, "q0", "7")
-    assert p.step == "q0" and p.say_hi.startswith("Galat")
-
-
-def test_spray_booking_needs_a_second_confirming_key(ivr_case):
-    first = ivr.handle(ivr_case, "result", "1")
-    assert first.step == "confirm_didi" and "book_didi" not in first.actions
-    assert "book_didi" in ivr.handle(ivr_case, "confirm_didi", "1").actions
-
-
-def test_zero_always_reaches_a_human(ivr_case):
-    for step in ("warning", "q1", "result"):
-        assert "transfer_human" in ivr.handle(ivr_case, step, "0").actions
-
-
-def test_result_prompt_says_suspected_and_source(ivr_case):
-    text = ivr.result(ivr_case).say_hi
-    assert "shak" in text and "ICAR-NSRI" in text
 
 
 # --- links ----------------------------------------------------------------
