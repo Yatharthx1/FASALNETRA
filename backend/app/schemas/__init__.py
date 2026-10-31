@@ -101,6 +101,46 @@ class WalkIn(BaseModel):
     trail: list[tuple[float, float]] = Field(min_length=3, description="[lon, lat] GPS points around the patch")
 
 
+class TrackPoint(BaseModel):
+    t: int = Field(description="phone time, ms since epoch")
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    accuracy: float = Field(ge=0, le=5000, description="metres, 1 sigma")
+    heading: float | None = Field(default=None, ge=0, le=360)
+    speed: float | None = Field(default=None, ge=0, le=50)
+    source: Literal["gps", "steps", "hold"] = "gps"
+
+
+class TrackIn(BaseModel):
+    points: list[TrackPoint] = Field(min_length=1, max_length=900, description="batched 5 Hz samples")
+
+
+class TrackOut(BaseModel):
+    stored: int
+    total: int
+
+
+class LocateIn(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    accuracy: float = Field(default=10.0, ge=0, le=5000)
+
+
+class ParcelOut(BaseModel):
+    khasra: str | None
+    village_id: str | None
+    area_ha: float | None
+    recorded_crop: str | None
+
+
+class LocateOut(BaseModel):
+    status: Literal["on_field", "near_field", "away"]
+    distance_m: float
+    accuracy_m: float
+    parcel: ParcelOut | None
+    parcel_is_mapped_field: bool
+
+
 class PhotoOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

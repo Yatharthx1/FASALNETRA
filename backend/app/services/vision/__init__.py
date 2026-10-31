@@ -18,14 +18,16 @@ REFERENCES = VISION_DIR / "references"          # references/<label>/*.jpg, 1-2 
 CACHE_FILE = VISION_DIR / "llm_cache.json"
 CALIBRATION_FILE = VISION_DIR / "calibration.json"
 
-LABELS = ["healthy", "yellow_mosaic", "uniform_yellowing", "chewing_damage", "fungal", "unsure"]
+LABELS = ["healthy", "yellow_mosaic", "uniform_yellowing", "chewing_damage", "girdle_beetle", "fungal", "unsure"]
 LABEL_HINTS = {
     "healthy": "uniform green leaves, no spots, no holes",
     "yellow_mosaic": "bright yellow and green patches in an irregular mosaic or mottle, usually on younger upper leaves; "
                      "leaf may be crinkled (yellow mosaic virus, spread by whitefly)",
     "uniform_yellowing": "whole leaf evenly pale yellow-green with no mottle, often older lower leaves "
                          "(nutrient shortage or waterlogging, not a pest)",
-    "chewing_damage": "holes, eaten edges or skeletonised leaves from caterpillars or beetles",
+    "chewing_damage": "holes, eaten edges or skeletonised leaves from caterpillars (semilooper, tobacco caterpillar)",
+    "girdle_beetle": "two parallel ring cuts around a leaf stalk or stem, with the leaves above it drooping or dried "
+                     "while the rest of the plant is green",
     "fungal": "brown, rusty, grey or water-soaked spots or blight on leaves "
               "(rust, septoria, frog-eye, aerial blight, bacterial blight)",
     "unsure": "photo does not show a soybean leaf clearly, or symptoms fit none of the above",
@@ -52,6 +54,7 @@ How to decide:
 2. Mottled yellow-green mosaic = yellow_mosaic. Even pale yellowing without mottle = uniform_yellowing. Do not
    confuse the two: the wrong one leads to a wrong spray.
 3. Rust, septoria, frog-eye and blight are all "fungal"; you do not need to tell them apart.
+   Holes in the leaf blade = chewing_damage; ring cuts on a stalk with drooping leaves above = girdle_beetle.
 4. If the leaf is out of focus, too far away, or not soybean, answer "unsure". Guessing is worse than "unsure".
 5. confidence: your probability (0-1) that the label is correct.
 6. severity: 0 none, 1 a few spots, 2 clear damage on many leaves, 3 most of the leaf area affected.
@@ -59,7 +62,11 @@ How to decide:
 
 
 def quality(img: Image.Image) -> dict:
-    g = np.asarray(ImageOps.grayscale(img).resize((512, 512)), dtype="float32")
+    # shrink to at most 512 px, keeping the shape; never enlarge: a small leaf crop stretched to 512 x 512 looks
+    # blurrier than it is (seen with the phone's leaf crops)
+    small = ImageOps.grayscale(img)
+    small.thumbnail((512, 512))
+    g = np.asarray(small, dtype="float32")
     lap = g[:-2, 1:-1] + g[2:, 1:-1] + g[1:-1, :-2] + g[1:-1, 2:] - 4 * g[1:-1, 1:-1]
     blur, bright = float(lap.var()), float(g.mean())
     return {"blur_score": round(blur, 1), "brightness": round(bright, 1),
@@ -138,24 +145,60 @@ def calibrate(label: str, raw_conf: float) -> float:
     return raw_conf
 
 
+def provider() -> str:
+    """gemini (LLM, needs a key) | local (offline CLIP model) | mock (fixed answer for demos and tests).
+    Unset: gemini when a key is present, else the offline model."""
+    p = os.environ.get("VISION_PROVIDER", "").strip().lower()
+    if p:
+        return p
+    return "gemini" if (os.environ.get("VISION_API_KEY") or os.environ.get("GEMINI_API_KEY")) else "local"
+
+
+def advice(label: str) -> dict | None:
+    """What the farmer would use for this photo's cause, straight from the ICAR-NSRI table (never from the model).
+    The dose for the actual zone comes later from the evidence plan."""
+    from backend.app.services import advisory, evidence
+
+    cause = evidence.PHOTO_TO_CAUSE.get(label)
+    row = advisory.find(cause) if cause else None
+    if row is None:
+        return None
+    chem = row["chemical"][0] if row["chemical"] else None
+    return {"cause": row["cause"], "name_hi": row["name_hi"], "name_en": row["name_en"], "cultural": row["cultural"],
+            "product": chem["product"] if chem else None,
+            "dose_per_acre": round(chem["dose_per_ha"] * advisory.HA_PER_ACRE, 1) if chem else None,
+            "unit": chem["unit"] if chem else None, "pesticide": chem is not None}
+
+
 def classify(image: bytes | str | Path, use_cache: bool = True) -> dict:
     img, raw = _load(image)
     q = quality(img)
     key = hashlib.sha256(raw).hexdigest()
     cache = _cache() if use_cache else {}
-    if key in cache:
+    which = provider()
+    if key in cache and cache[key].get("provider", "gemini") == which:
         out = cache[key]
     else:
-        if os.environ.get("VISION_PROVIDER", "gemini") == "mock":
+        if which == "mock":
             out = {"label": "yellow_mosaic", "confidence": 0.86, "severity": 2, "whitefly_visible": True,
                    "symptoms_seen": "mock result"}
+        elif which == "local":
+            from backend.app.services.vision import local
+            if not local.available():
+                raise VisionUnavailable("Offline model needs `pip install sentence-transformers`; "
+                                        "or set GEMINI_API_KEY, or VISION_PROVIDER=mock for the demo")
+            out = local.classify(img)
         else:
             if not (os.environ.get("VISION_API_KEY") or os.environ.get("GEMINI_API_KEY")):
-                raise VisionUnavailable("Vision AI not configured: set GEMINI_API_KEY, or VISION_PROVIDER=mock for the demo")
+                raise VisionUnavailable("Vision AI not configured: set GEMINI_API_KEY, VISION_PROVIDER=local "
+                                        "for the offline model, or VISION_PROVIDER=mock for the demo")
             out = _ask_gemini(_jpeg(img), _references())
         out["label"] = out["label"] if out["label"] in LABELS else "unsure"
+        out["provider"] = which
         cache[key] = out
         if use_cache:
             _save_cache(cache)
-    return {**out, "raw_confidence": out["confidence"], "confidence": calibrate(out["label"], out["confidence"]),
-            "quality": q, "image_sha256": key}
+    # Only the LLM's self-reported confidence is calibrated; the trained head is calibrated by construction.
+    conf = calibrate(out["label"], out["confidence"]) if which == "gemini" else out["confidence"]
+    return {**out, "raw_confidence": out["confidence"], "confidence": conf,
+            "quality": q, "image_sha256": key, "advice": advice(out["label"])}

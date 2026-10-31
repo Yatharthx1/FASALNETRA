@@ -1,4 +1,4 @@
-import type { AppEvent, CallResult, Case, DidiProfile, Field, IvrPrompt, Job, Risk, Scan } from "../types/api";
+import type { AppEvent, CallResult, Case, DidiProfile, Field, IvrPrompt, Job, Located, Risk, Scan, TrackPoint } from "../types/api";
 
 const BASE = "/api/v1";
 
@@ -29,6 +29,7 @@ export const api = {
   createCase: (field_id = "demo") => post<Case>("/cases", { field_id }),
   getCase: (id: number) => req<Case>(`/cases/${id}`),
   caseByToken: (t: string) => req<Case>(`/cases/by-token?t=${encodeURIComponent(t)}`),
+  opened: (id: number) => fetch(`${BASE}/cases/${id}/opened`, { method: "POST" }).then(() => undefined),
   missedCall: (fieldId = "demo") => post<{ phone: string; callback_in_s: number }>(`/fields/${fieldId}/missed-call`),
   ivrPrompt: (phone: string) => post<IvrPrompt>("/ivr/simulate/registered", { phone }),
   warningCall: (id: number) => post<CallResult>(`/cases/${id}/warning-call`),
@@ -37,12 +38,22 @@ export const api = {
   keypad: (phone: string, digit: string) => post<IvrPrompt>("/ivr/simulate/registered", { phone, digits: digit }),
   traps: (id: number, counts: number[]) => post<Case>(`/cases/${id}/traps`, { counts }),
   walk: (id: number, trail: [number, number][]) => post<Case>(`/cases/${id}/walk`, { trail }),
+  track: (id: number, points: TrackPoint[]) => post<{ stored: number; total: number }>(`/cases/${id}/track`, { points }),
+  locate: (id: number, at: { lat: number; lon: number; accuracy: number }) => post<Located>(`/cases/${id}/locate`, at),
   evidence: (id: number) => post<Case>(`/cases/${id}/evidence`),
-  uploadPhoto: (id: number, file: Blob, f: { kind: string; spot: number; cell_id?: string; lat?: number; lon?: number }) => {
+  uploadPhoto: async (id: number, file: Blob, f: { kind: string; spot: number; cell_id?: string; lat?: number; lon?: number }) => {
     const form = new FormData();
     form.append("file", file, "photo.jpg");
     Object.entries(f).forEach(([k, v]) => v !== undefined && form.append(k, String(v)));
-    return req<Case["photos"][number]>(`/cases/${id}/photos`, { method: "POST", body: form });
+    // village 2G/3G drops requests: one quiet retry on a network error (not on a server answer)
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await req<Case["photos"][number]>(`/cases/${id}/photos`, { method: "POST", body: form });
+      } catch (e) {
+        if (e instanceof ApiError || attempt >= 1) throw e;
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    }
   },
 
   bookDidi: (id: number) => post<Job>(`/cases/${id}/book-didi`),

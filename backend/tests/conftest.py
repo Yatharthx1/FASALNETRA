@@ -13,6 +13,7 @@ os.environ.update({
     "TWILIO_ACCOUNT_SID": "",          # never place real calls/SMS from tests, whatever .env says
     "TWILIO_AUTH_TOKEN": "",
     "TWILIO_PHONE_NUMBER": "",
+    "SMS_PROVIDER": "",                # link channel from .env (whatsapp / aws) must not reach the tests
     "DEMO_FARMER_PHONE": "+919876543210",
     "PUBLIC_BASE_URL": "http://test",
     "POSTGRES_URL": "",

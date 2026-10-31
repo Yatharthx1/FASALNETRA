@@ -27,6 +27,10 @@ from backend.app.services.communications.ivr_service import (
     inbound_flow,
     generate_twiml_for_registered_step,
     generate_twiml_for_step,
+    generate_twiml_live,
+    generate_twiml_say_hangup,
+    ivr_url,
+    live_url,
     save_farmer_from_onboarding,
     start_call,
     trigger_outbound_call,
@@ -53,6 +57,37 @@ async def _apply_to_case(phone: str, step: str, digits: str | None, action: str)
     """Hand a registered-flow key press to the farmer's open crop case (SMS walk link, Drone Didi booking)."""
     async with database.SessionLocal() as adb:
         await cases.on_ivr_action(adb, phone, step, digits, action)
+
+
+async def _onboarded(phone: str, answers: dict) -> bool:
+    """Onboarding finished: resolve the field, pick walk targets from Sentinel-2, send the SMS camera link."""
+    async with database.SessionLocal() as adb:
+        return await cases.on_onboarded(adb, phone, answers) is not None
+
+
+def _hold_for_photos(session: IVRSession) -> None:
+    """Turn the call into the live hold: same state as a registered farmer who was just sent the link."""
+    session.flow = "report"
+    session.current_step = "sms_dispatched"
+    session.reprompt_count = 0
+    session.status = "in_progress"
+    session.answers = {**(session.answers or {}), "sms_sent": True}
+
+
+async def _advance_live(db: Session, session: IVRSession) -> tuple[str, str]:
+    """One live-hold check. On "result" the session moves to the result call; on "end" it is closed."""
+    async with database.SessionLocal() as adb:
+        kind, text, state = await cases.live_tick(adb, session.phone, session.answers or {})
+    session.answers = state
+    if kind == "result":
+        farmer = db.query(Farmer).filter(Farmer.phone == session.phone).first()
+        if farmer:
+            farmer.active_flow = "result"
+        session.flow, session.current_step, session.reprompt_count = "result", "result_prompt", 0
+    elif kind == "end":
+        session.status = "completed"
+    db.commit()
+    return kind, text
 
 
 async def execute_missed_call_callback(phone: str, db_session_maker) -> None:
@@ -220,11 +255,21 @@ async def ivr_onboarding_step(
     session.current_step = step_result["next_step"]
     session.reprompt_count = step_result["reprompt_count"]
 
+    live = False
     if step_result["next_step"] == "completed":
         session.status = "completed"
         save_farmer_from_onboarding(db, session.phone, session.answers)
+        live = await _onboarded(session.phone, session.answers or {})
 
     db.commit()
+
+    if live:   # same call continues: "SMS mein link aaya hai, usey dabaiye", then hold while the camera runs
+        _hold_for_photos(session)
+        db.commit()
+        twiml = generate_twiml_for_registered_step("report", "sms_dispatched", None,
+                                                   ivr_url("registered/step", call_sid=session.call_sid),
+                                                   reprompt_message=get_step_config("completed", {})["prompt_text"])
+        return Response(content=twiml, media_type="application/xml")
 
     action_url = f"{settings.public_base_url}{settings.api_v1_prefix}/ivr/onboarding/step?call_sid={session.call_sid}"
     reprompt_msg = step_result["message"] if step_result["reprompt"] else None
@@ -327,6 +372,30 @@ async def ivr_registered_step(
     return Response(content=twiml, media_type="application/xml")
 
 
+@router.post("/live")
+async def ivr_live(
+    call_sid: Optional[str] = Query(None),
+    CallSid: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Live hold while the farmer uses the camera link: speak each new photo's check, then the result in the same call."""
+    sid = (call_sid or CallSid or "").strip()
+    session = db.query(IVRSession).filter(IVRSession.call_sid == sid).first()
+    if session is None or session.current_step != "sms_dispatched" or session.status != "in_progress":
+        return Response(content=generate_twiml_say_hangup("धन्यवाद।"), media_type="application/xml")
+    kind, text = await _advance_live(db, session)
+    if kind == "wait":
+        twiml = generate_twiml_live(text, live_url(session.call_sid), pause_s=cases.LIVE_TICK_S)
+    elif kind == "result":
+        farmer = db.query(Farmer).filter(Farmer.phone == session.phone).first()
+        twiml = generate_twiml_for_registered_step("result", "result_prompt", farmer,
+                                                   ivr_url("registered/step", call_sid=session.call_sid),
+                                                   context=await _case_context(session.phone))
+    else:
+        twiml = generate_twiml_say_hangup(text)
+    return Response(content=twiml, media_type="application/xml")
+
+
 @router.post("/status")
 async def ivr_call_status(
     CallSid: Optional[str] = Form(None),
@@ -339,7 +408,9 @@ async def ivr_call_status(
     if CallSid:
         session = db.query(IVRSession).filter(IVRSession.call_sid == CallSid).first()
         if session and CallStatus in ["completed", "failed", "busy", "no-answer"]:
-            if session.current_step != "completed" and CallStatus != "completed":
+            if session.current_step == "sms_dispatched" and session.status == "in_progress":
+                session.status = "completed"   # hung up during the live hold: the result goes out as a callback
+            elif session.current_step != "completed" and CallStatus != "completed":
                 session.status = "failed"
             db.commit()
     return {"status": "received"}
@@ -389,6 +460,16 @@ async def ivr_simulate_step(
         if session.current_step == "completed":
             session.status = "completed"
             save_farmer_from_onboarding(db, session.phone, session.answers)
+            if await _onboarded(session.phone, session.answers or {}):
+                answers = dict(session.answers or {})
+                _hold_for_photos(session)
+                db.commit()
+                step_cfg = get_step_config("completed", answers)
+                return IVRSimulateResponse(
+                    call_sid=session.call_sid, phone=session.phone, current_step="completed",
+                    prompt_id=step_cfg["prompt_id"], prompt_text=step_cfg["prompt_text"], num_digits=0, options=[],
+                    answers=answers, is_completed=True, reprompt_count=0,
+                    message="Field mapped and SMS link sent; the call continues at /ivr/simulate/registered (live hold).")
 
         db.commit()
         message = step_result["message"]
@@ -426,7 +507,15 @@ async def ivr_simulate_registered(
         raise HTTPException(status_code=404, detail="No registered-farmer call in progress for this phone")
 
     message = "Prompt shown."
-    if payload.digits is not None and session.status != "completed":
+    if payload.digits is None and session.current_step == "sms_dispatched" and session.status == "in_progress":
+        # each poll is one live-hold check, like the Twilio /ivr/live redirect loop
+        kind, text = await _advance_live(db, session)
+        farmer = db.query(Farmer).filter(Farmer.phone == phone).first()
+        if kind != "result":
+            prompt = registered_prompt(phone, "report", "sms_dispatched", farmer, f"live: {kind}")
+            return prompt.model_copy(update={"prompt_text": text, "is_completed": kind == "end"})
+        message = "live: result ready"
+    elif payload.digits is not None and session.status != "completed":
         pressed_on = session.current_step
         step_result = advance_registered(db, session, payload.digits)
         await _apply_to_case(phone, pressed_on, payload.digits, step_result["action"])

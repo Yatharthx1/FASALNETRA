@@ -2,7 +2,7 @@
 import type { Geometry, LineString, Polygon } from "geojson";
 
 export type Band = "safe" | "watch" | "high";
-export type Cause = "yellow_mosaic" | "fungal" | "chewing_damage" | "water_stress" | "nutrient";
+export type Cause = "yellow_mosaic" | "fungal" | "chewing_damage" | "girdle_beetle" | "water_stress" | "nutrient";
 
 export interface Driver { en: string; hi: string }
 export interface CauseRisk { score: number; band: Band; drivers: Driver[] }
@@ -24,12 +24,30 @@ export interface Scan {
   summary: { cells_in_field: number; cells_flagged: number; flagged_acres: number; pattern: string; strength: number };
 }
 
-export interface TargetCell { id: string; centre: [number, number]; polygon: Polygon; visited: boolean }
+/** reason: why the walk stops here (satellite patch, its far edge, a low spot, the grassy border, or the weakest cell). */
+export interface TargetCell {
+  id: string; centre: [number, number]; polygon: Polygon; visited: boolean;
+  reason?: "satellite_patch" | "patch_edge" | "low_spot" | "border" | "weakest"; patch_acres?: number;
+}
 
 export interface Vision {
   label: string; confidence: number; severity: number; whitefly_visible: boolean; symptoms_seen: string;
   quality: { ok: boolean; retake_reason: "blurry" | "dark" | null };
+  /** What the farmer would use for this photo's cause, from the ICAR-NSRI table (zone dose comes with the evidence). */
+  advice?: { cause: Cause; name_hi: string; name_en: string; product: string | null; dose_per_acre: number | null;
+    unit: string | null; pesticide: boolean } | null;
 }
+/** One phone position sample (5 a second: real GPS fixes and the fused track between them). */
+export interface TrackPoint {
+  t: number; lat: number; lon: number; accuracy: number; heading: number | null; speed: number | null;
+  source: "gps" | "steps" | "hold";
+}
+export interface Located {
+  status: "on_field" | "near_field" | "away"; distance_m: number; accuracy_m: number;
+  parcel: { khasra: string | null; village_id: string | null; area_ha: number | null; recorded_crop: string | null } | null;
+  parcel_is_mapped_field: boolean;
+}
+
 export interface Photo { id: number; kind: string; spot: number; cell_id: string | null; vision: Vision }
 
 export interface Signal { name: string; weight: number; supports: string | null; strength: number; share: number }

@@ -11,7 +11,11 @@ from backend.app.schemas import (
     JobOut,
     KeypadIn,
     LinkOut,
+    LocateIn,
+    LocateOut,
     PhotoOut,
+    TrackIn,
+    TrackOut,
     TrapsIn,
     WalkIn,
 )
@@ -56,6 +60,12 @@ async def case_by_token(t: str, db: DbDep) -> CaseOut:
 @router.get("/{case_id}", response_model=CaseOut)
 async def get_case(case: CaseDep) -> CaseOut:
     return case
+
+
+@router.post("/{case_id}/opened", status_code=status.HTTP_204_NO_CONTENT)
+async def link_opened(case: CaseDep, db: DbDep) -> None:
+    """The farmer tapped the SMS link; the live call tells them they are on the right page."""
+    await cases.link_opened(db, case)
 
 
 @router.post("/{case_id}/warning-call", response_model=CallOut)
@@ -115,6 +125,19 @@ async def upload_photo(
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     except OSError as exc:   # PIL cannot read it
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Not an image: {exc}") from exc
+
+
+@router.post("/{case_id}/track", response_model=TrackOut)
+async def track(payload: TrackIn, case: CaseDep, db: DbDep) -> TrackOut:
+    """Batched phone positions from the walk page (5 a second: GPS fixes plus the fused track between them)."""
+    stored, total = await cases.save_track(db, case, [p.model_dump() for p in payload.points])
+    return TrackOut(stored=stored, total=total)
+
+
+@router.post("/{case_id}/locate", response_model=LocateOut)
+async def locate(payload: LocateIn, case: CaseDep, db: DbDep) -> LocateOut:
+    """Which parcel the phone is in and how far it is from the farmer's mapped field."""
+    return await cases.locate_farmer(db, case, payload.lon, payload.lat, payload.accuracy)
 
 
 @router.post("/{case_id}/walk", response_model=CaseOut)

@@ -2,7 +2,7 @@
 
 Event: compensation survey for yellow mosaic in Mandsaur ordered on 1 Sept 2025 (PRD).
 Uses the Open-Meteo archive only, so no data from after each scored day leaks in
-(every score looks back 7 days). Sowing dates vary because farmers sow over ~3 weeks.
+(every score looks back 14 days, rules.HISTORY). Sowing dates vary because farmers sow over ~3 weeks.
 
     python scripts/backtest_mandsaur.py
 

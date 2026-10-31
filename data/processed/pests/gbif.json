@@ -1,0 +1,170 @@
+{
+  "source": "GBIF.org occurrence search API",
+  "fetched": "2026-11-01",
+  "malwa_box": {
+    "decimalLatitude": "21.5,26.5",
+    "decimalLongitude": "73.5,79.5"
+  },
+  "causes": {
+    "yellow_mosaic": {
+      "Bemisia tabaci": {
+        "taxon_key": 2012126,
+        "india_total": 4540,
+        "india_by_month": [
+          239,
+          157,
+          119,
+          93,
+          54,
+          46,
+          182,
+          317,
+          183,
+          282,
+          174,
+          157
+        ],
+        "malwa_total": 96
+      },
+      "Mungbean yellow mosaic India virus": {
+        "taxon_key": 9886628,
+        "india_total": 489,
+        "india_by_month": [
+          23,
+          19,
+          7,
+          14,
+          53,
+          27,
+          8,
+          87,
+          104,
+          21,
+          9,
+          16
+        ],
+        "malwa_total": 29
+      }
+    },
+    "chewing_damage": {
+      "Spodoptera litura": {
+        "taxon_key": 5109882,
+        "india_total": 920,
+        "india_by_month": [
+          51,
+          34,
+          48,
+          88,
+          46,
+          43,
+          101,
+          66,
+          73,
+          87,
+          51,
+          91
+        ],
+        "malwa_total": 7
+      },
+      "Chrysodeixis acuta": {
+        "taxon_key": 1785181,
+        "india_total": 37,
+        "india_by_month": [
+          1,
+          0,
+          1,
+          0,
+          1,
+          1,
+          5,
+          5,
+          2,
+          6,
+          4,
+          4
+        ],
+        "malwa_total": 2
+      },
+      "Helicoverpa armigera": {
+        "taxon_key": 8108800,
+        "india_total": 555,
+        "india_by_month": [
+          76,
+          19,
+          61,
+          44,
+          65,
+          22,
+          18,
+          17,
+          15,
+          15,
+          9,
+          15
+        ],
+        "malwa_total": 8
+      }
+    },
+    "girdle_beetle": {
+      "Obereopsis brevis": {
+        "taxon_key": 1158054,
+        "india_total": 0,
+        "india_by_month": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "malwa_total": 0
+      }
+    },
+    "fungal": {
+      "Rhizoctonia solani": {
+        "taxon_key": 2555201,
+        "india_total": 1288,
+        "india_by_month": [
+          45,
+          10,
+          26,
+          42,
+          50,
+          19,
+          26,
+          17,
+          69,
+          73,
+          22,
+          21
+        ],
+        "malwa_total": 1
+      },
+      "Phakopsora pachyrhizi": {
+        "taxon_key": 2514154,
+        "india_total": 23,
+        "india_by_month": [
+          0,
+          1,
+          0,
+          4,
+          0,
+          0,
+          0,
+          0,
+          0,
+          8,
+          0,
+          0
+        ],
+        "malwa_total": 0
+      }
+    }
+  }
+}

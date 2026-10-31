@@ -1,15 +1,17 @@
 """Case workflow: warning call (IVR) -> SMS link -> grid walk + photos -> evidence -> advisory or Drone Didi."""
 import asyncio
 from collections import Counter
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
-from backend.app.db.models import Case, DidiJob, Field, FieldOwner, Photo
+from backend.app.db.models import Case, DidiJob, Event, Field, FieldOwner, GpsFix, Photo
 from backend.app.db.session import SessionLocal as IvrSessionLocal
 from backend.app.models.farmer import Farmer as IvrFarmer
+from backend.app.models.ivr_session import IVRSession
 from backend.app.services import (
     advisory,
     communications,
@@ -23,14 +25,17 @@ from backend.app.services.communications.registered_state_machine import (
     get_registered_flow_config,
 )
 from backend.app.services.events import emit
-from backend.app.services.mapping import geo
-from backend.app.services.vision import knn
+from backend.app.services.mapping import geo, parcels, targets
+from backend.app.services.risk import seasonality
+from backend.app.services.vision import kindwise, knn
+from backend.app.services.vision import local as local_model
 
 TARGET_CELLS = 3          # grid cells the farmer is asked to walk to, worst first
 DAMAGE_SEVERITY = 2       # PRD: zone = spots with severity >= 2
 LEAF_KINDS = {"leaf_top", "leaf_under", "chewed"}
 # Spoken cause names for the IVR (same as frontend/src/locales/hi.json "cause.*")
 CAUSE_HI = {"yellow_mosaic": "पीला मोज़ेक", "fungal": "पत्तों का झुलसा", "chewing_damage": "इल्ली का नुकसान",
+            "girdle_beetle": "गर्डल बीटल (चक्र भृंग)",
             "water_stress": "पानी की कमी या जलभराव", "nutrient": "खाद की कमी"}
 
 
@@ -49,17 +54,29 @@ async def get_case(db: AsyncSession, case_id: int) -> Case:
     return c
 
 
+def field_profile(phone: str) -> dict | None:
+    """Neighbour crop and grassy border from the farmer's IVR onboarding (None if never onboarded by phone)."""
+    db = IvrSessionLocal()
+    try:
+        farmer = db.query(IvrFarmer).filter(IvrFarmer.phone == ivr_service.clean_phone_number(phone)).first()
+        if farmer is None or not (farmer.neighbor_crop or farmer.grassy_border):
+            return None
+        return {"neighbor_crop": farmer.neighbor_crop, "grassy_border": farmer.grassy_border}
+    finally:
+        db.close()
+
+
 async def create(db: AsyncSession, field_id: str) -> Case:
     f = await fields.get_field(db, field_id)
     scan = await asyncio.to_thread(fields.scan, f)
-    flagged = sorted((c for c in scan["cells"] if c["flagged"]), key=lambda c: min(c["z_ndvi"] or 0, c["z_ndre"] or 0))
-    targets = [{"id": c["id"], "centre": c["centre"], "polygon": c["polygon"], "visited": False}
-               for c in flagged[:TARGET_CELLS]]
-    case = Case(field_id=f.id, target_cells=targets)
+    profile = await asyncio.to_thread(field_profile, f.farmer.phone)
+    stops = await asyncio.to_thread(targets.pick, scan["cells"], f.geometry, profile, TARGET_CELLS)
+    case = Case(field_id=f.id, target_cells=stops)
     db.add(case)
     await db.commit()
     await db.refresh(case)
-    await emit(db, "case_created", case.id, field=f.id, targets=len(targets), scene=scan["scene_date"],
+    await emit(db, "case_created", case.id, field=f.id, targets=len(stops), scene=scan["scene_date"],
+               reasons=[s["reason"] for s in stops],
                flagged_acres=scan["summary"]["flagged_acres"])
     return case
 
@@ -176,7 +193,10 @@ async def send_link(db: AsyncSession, case: Case) -> tuple[str, communications.S
     sent = communications.send_sms(case.field.farmer.phone, body)
     case.status = "link_sent"
     await db.commit()
-    await emit(db, "sms_sent", case.id, simulated=sent.simulated, url=url)
+    if sent.error:   # link still shown on the dashboard ("Open walk page") so the walk can go on
+        await emit(db, "sms_failed", case.id, url=url, error=sent.error[:200])
+    else:
+        await emit(db, "sms_sent", case.id, simulated=sent.simulated, url=url, channel=settings.sms_channel)
     return url, sent
 
 
@@ -202,7 +222,12 @@ async def add_photo(db: AsyncSession, case: Case, data: bytes, kind: str, spot: 
     path.write_bytes(data)
 
     result = await asyncio.to_thread(vision.classify, data)
-    if knn.available():
+    if result["quality"]["ok"] and kindwise.available():   # costs a credit: only for photos we keep
+        result["expert"] = await asyncio.to_thread(kindwise.classify, data, lat, lon)
+    # second, independent vote: the trained offline model next to the LLM, else the CLIP neighbours
+    if vision.provider() == "gemini" and local_model.head_trained():
+        result["match"] = await asyncio.to_thread(local_model.classify, data)
+    elif knn.available():
         result["match"] = await asyncio.to_thread(knn.vote, data)
     photo = Photo(case_id=case.id, kind=kind, spot=spot, cell_id=cell_id, lat=lat, lon=lon,
                   path=str(path.relative_to(settings.upload_dir)), vision=result)
@@ -226,6 +251,19 @@ async def save_walk(db: AsyncSession, case: Case, trail: list[tuple[float, float
     await db.commit()
     await emit(db, "zone_mapped", case.id, source="walk", acres=case.zone_acres)
     return case
+
+
+def _expert_vote(photos: list[Photo]) -> dict | None:
+    """Kindwise answers over the leaf photos: the label with most probability mass, its mean probability."""
+    answers = [p.vision["expert"] for p in photos
+               if p.kind in LEAF_KINDS and p.vision.get("expert") and p.vision["expert"]["label"] != "unsure"]
+    if not answers:
+        return None
+    mass = Counter()
+    for a in answers:
+        mass[a["label"]] += a["confidence"]
+    label = mass.most_common(1)[0][0]
+    return {"label": label, "confidence": round(mass[label] / len(answers), 3)}
 
 
 def _photo_votes(photos: list[Photo]) -> tuple[dict | None, dict | None]:
@@ -268,7 +306,9 @@ async def build_evidence(db: AsyncSession, case: Case) -> Case:
     ev = evidence.build(photo_ai=photo_ai, photo_match=photo_match, trap_counts=case.trap_counts or None,
                         keypad=case.keypad or None, weather_scores=weather_fit, das=das,
                         advisory_flags=fields.advisory_flags(), satellite=scan["summary"],
-                        zone_acres=case.zone_acres or scan["summary"]["flagged_acres"])
+                        zone_acres=case.zone_acres or scan["summary"]["flagged_acres"],
+                        field_profile=await asyncio.to_thread(field_profile, f.farmer.phone),
+                        photo_expert=_expert_vote(case.photos), season=seasonality.season_vote(fields.today()))
     ev["savings"] = advisory.savings(f.area_acres, case.zone_acres or 0, ev["cause"],
                                      settings.pesticide_price_inr_per_unit)
     case.evidence = ev
@@ -279,8 +319,9 @@ async def build_evidence(db: AsyncSession, case: Case) -> Case:
     if ev["level"] == "high":
         nb = fields.neighbours_within(f)
         await emit(db, "neighbours_warned", case.id, cause=ev["cause"], count=len(nb), fields=nb[:5])
-    elif ev["action"] == "didi_verify":
-        # Not sure: besides the page, call the farmer and offer Drone Didi by voice (key 1 books her check)
+    # The advisory is spoken, not only shown: if the farmer is still on the live call it is said there
+    # (see live_tick); otherwise call back. Key 1 books Drone Didi (spray, or her check when not sure).
+    if not await asyncio.to_thread(live_holding, case.field.farmer.phone):
         await result_call(db, case)
     return case
 
@@ -306,3 +347,110 @@ def _flagged_zone(case: Case) -> dict:
     from shapely.ops import unary_union
     cells = unary_union([geo.to_m(c["polygon"]) for c in case.target_cells])
     return geo.to_wgs(cells.intersection(geo.to_m(case.field.geometry)))
+
+
+# --- Live call: the farmer stays on the line while the camera page runs -------------------------------------
+
+LIVE_TICK_S = 6              # pause between checks while the farmer walks
+LIVE_MAX_TICKS = 50          # ~5 minutes on hold, then hang up and call back with the result
+LIVE_STALE = timedelta(minutes=8)
+LINK_REMIND_TICKS = (4, 12, 24)
+
+
+def _utcnow_naive() -> datetime:
+    """IVR session timestamps are naive UTC (models/ivr_session.py)."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def live_holding(phone: str) -> bool:
+    """Is a call to this phone holding on the line right now (link sent, waiting for photos)?"""
+    db = IvrSessionLocal()
+    try:
+        s = db.query(IVRSession).filter(IVRSession.phone == ivr_service.clean_phone_number(phone)).first()
+        return (s is not None and s.current_step == "sms_dispatched" and s.status == "in_progress"
+                and s.updated_at is not None and _utcnow_naive() - s.updated_at < LIVE_STALE)
+    finally:
+        db.close()
+
+
+async def link_opened(db: AsyncSession, case: Case) -> None:
+    await emit(db, "link_opened", case.id)
+
+
+async def _was_opened(db: AsyncSession, case_id: int) -> bool:
+    q = select(Event.id).where(Event.case_id == case_id, Event.type == "link_opened").limit(1)
+    return (await db.execute(q)).first() is not None
+
+
+def _photo_line(p: Photo, first_ok: bool) -> str:
+    retake = p.vision.get("quality", {}).get("retake_reason")
+    if retake:
+        return "फोटो में अंधेरा है, रोशनी की तरफ मुड़कर फिर से लीजिए।" if retake == "dark"             else "फोटो धुंधली है। फोन स्थिर रखिए और पत्ते के पास से फिर लीजिए।"
+    adv = p.vision.get("advice")
+    if first_ok and adv and p.vision.get("label") not in ("healthy", "unsure"):
+        return f"फोटो मिल गई। पहली जांच में {CAUSE_HI.get(adv['cause'], adv['name_hi'])} का शक है। बाकी निशानों की फोटो भी लीजिए।"
+    return "फोटो मिल गई, साफ है।"
+
+
+async def live_tick(db: AsyncSession, phone: str, state: dict) -> tuple[str, str, dict]:
+    """One check while the farmer holds: what to say now. Returns (kind, hindi text, new state);
+    kind is "wait" (say it, pause, check again), "result" (evidence ready: play the result prompt) or "end"."""
+    state = {**state, "live_ticks": state.get("live_ticks", 0) + 1}
+    case = await open_case_for_phone(db, phone)
+    if case is None:
+        return "end", "धन्यवाद। फोटो मिलने पर हम आपको कॉल करेंगे।", state
+    if case.evidence:
+        return "result", "", state
+
+    lines: list[str] = []
+    if not state.get("opened_said") and await _was_opened(db, case.id):
+        state["opened_said"] = True
+        lines.append("लिंक खुल गया। कैमरा चालू होगा, लाल लाइन के साथ पहले निशान तक चलिए।")
+    leaf = [p for p in case.photos if p.kind in LEAF_KINDS]
+    said = state.get("photos_said", 0)
+    for p in leaf[said:]:
+        ok = not p.vision.get("quality", {}).get("retake_reason")
+        lines.append(_photo_line(p, ok and not state.get("cause_said")))
+        state["cause_said"] = state.get("cause_said") or (ok and p.vision.get("label") not in ("healthy", "unsure"))
+    state["photos_said"] = len(leaf)
+
+    if state["live_ticks"] >= LIVE_MAX_TICKS:
+        return "end", "कोई बात नहीं। फोटो भेजने के बाद हम आपको जांच का नतीजा बताने के लिए कॉल करेंगे। धन्यवाद।", state
+    if not leaf and not state.get("opened_said") and state["live_ticks"] in LINK_REMIND_TICKS:
+        lines.append(f"आपके फोन पर {settings.link_channel_hi} में फसलनेत्र का लिंक आया है। उसे दबाइए। कॉल चालू रखिए।")
+    return "wait", " ".join(lines), state
+
+
+async def on_onboarded(db: AsyncSession, phone: str, answers: dict) -> Case | None:
+    """IVR onboarding done -> resolve the land parcel -> Sentinel-2 grid -> walk targets -> SMS camera link."""
+    try:
+        f = await fields.field_for_onboarded(db, phone, answers)
+        case = await _case_for_report(db, phone) or await create(db, f.id)
+    except (ValueError, OSError) as exc:   # no satellite scene / cache for this field
+        await emit(db, "onboarding_unmapped", None, phone=phone, reason=str(exc))
+        return None
+    await emit(db, "farmer_onboarded", case.id, phone=phone, village=answers.get("village"),
+               neighbor_crop=answers.get("neighbor_crop"), grassy_border=answers.get("grass_border"))
+    await send_link(db, case)
+    return case
+
+
+# --- Phone GPS: 5 Hz fused track from the walk page, and which parcel the farmer is standing in ---------------
+
+async def save_track(db: AsyncSession, case: Case, points: list[dict]) -> tuple[int, int]:
+    db.add_all(GpsFix(case_id=case.id, t_ms=p["t"], lat=p["lat"], lon=p["lon"], accuracy_m=p["accuracy"],
+                      heading=p.get("heading"), speed=p.get("speed"), source=p.get("source", "gps")) for p in points)
+    await db.commit()
+    total = (await db.execute(select(func.count()).select_from(GpsFix).where(GpsFix.case_id == case.id))).scalar_one()
+    return len(points), total
+
+
+async def locate_farmer(db: AsyncSession, case: Case, lon: float, lat: float, accuracy: float) -> dict:
+    """Is the farmer at their mapped field? Logged once per change, so the dashboard sees a wrong parcel on record."""
+    where = parcels.locate(lon, lat, case.field.geometry, accuracy)
+    last = (await db.execute(select(Event).where(Event.case_id == case.id, Event.type == "farmer_located")
+                             .order_by(Event.id.desc()).limit(1))).scalars().first()
+    if last is None or last.payload.get("status") != where["status"]:
+        await emit(db, "farmer_located", case.id, status=where["status"], distance_m=where["distance_m"],
+                   khasra=(where["parcel"] or {}).get("khasra"), mapped=where["parcel_is_mapped_field"])
+    return where

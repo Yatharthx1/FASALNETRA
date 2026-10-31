@@ -39,6 +39,17 @@ class Settings(BaseSettings):
     twilio_phone_number: str = ""
     twilio_validate_signature: bool = False
 
+    # Link channel: "twilio" (SMS) | "whatsapp" (Twilio WhatsApp; sandbox works on trial accounts, no DLT) |
+    # "aws" (AWS End User Messaging SMS) | blank = Twilio SMS when configured, else simulated.
+    # AWS End User Messaging SMS needs, for India, a TRAI DLT entity + approved template and a registered sender ID;
+    # a sandbox account can only text verified numbers under a $1/month cap until AWS Support lifts both.
+    sms_provider: str = ""
+    twilio_whatsapp_from: str = "+14155238886"   # Twilio WhatsApp sandbox number; the farmer sends "join <code>" once
+    aws_sms_region: str = "ap-south-1"
+    aws_sms_sender_id: str = ""        # DLT-registered sender ID (origination identity)
+    aws_sms_entity_id: str = ""        # DLT principal entity ID
+    aws_sms_template_id: str = ""      # DLT template ID; the message text must match the template exactly
+
     # IVR settings (flows live in services/communications/*_state_machine.py)
     ivr_default_language: str = "hi-IN"
     ivr_timeout_seconds: int = 8
@@ -94,6 +105,15 @@ class Settings(BaseSettings):
     @property
     def walk_link_base(self) -> str:
         return self.sms_link_base_url or f"{self.public_base_url.rstrip('/')}/walk"
+
+    @property
+    def sms_channel(self) -> str:
+        return self.sms_provider or ("twilio" if self.twilio_enabled else "simulated")
+
+    @property
+    def link_channel_hi(self) -> str:
+        """What the IVR calls the message the link arrives in."""
+        return "व्हाट्सऐप" if self.sms_channel == "whatsapp" else "SMS"
 
     @property
     def twilio_enabled(self) -> bool:

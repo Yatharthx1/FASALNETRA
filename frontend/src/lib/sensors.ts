@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { bearing, metres, type LonLat } from "./geo";
 
 /** Rear camera stream. Needs a secure origin (https or localhost). */
 export function useCamera(active: boolean) {
@@ -24,44 +23,52 @@ export function useCamera(active: boolean) {
     return () => { cancelled = true; stream?.getTracks().forEach((t) => t.stop()); };
   }, [active]);
 
-  /** Current frame as a JPEG. */
-  const capture = async (): Promise<Blob | null> => {
+  /** A JPEG, at most 1024 px a side (the server reads no more): ~150 KB instead of ~1 MB on 2G/3G.
+   * With a crop (the leaf's box, in video pixels) only that part is sent, at most 768 px: ~50 KB.
+   * Where the phone supports it (Chrome on Android) a real still photo is taken: it autofocuses and is much sharper
+   * than a frame of the compressed video stream. Otherwise, or if that fails, the current video frame is used. */
+  const capture = async (crop?: { x: number; y: number; w: number; h: number } | null): Promise<Blob | null> => {
     const v = videoRef.current;
     if (!v || !v.videoWidth) return null;
+    const still = await stillPhoto(v);
+    const img: CanvasImageSource = still ?? v;
+    const k = still ? still.width / v.videoWidth : 1;    // still photos are larger than the video frames
+    const box = crop ?? { x: 0, y: 0, w: v.videoWidth, h: v.videoHeight };
+    const src = { x: box.x * k, y: box.y * k, w: box.w * k, h: box.h * k };
+    const scale = Math.min(1, (crop ? CROP_MAX_SIDE : CAPTURE_MAX_SIDE) / Math.max(src.w, src.h));
     const c = document.createElement("canvas");
-    c.width = v.videoWidth; c.height = v.videoHeight;
-    c.getContext("2d")!.drawImage(v, 0, 0);
-    return new Promise((r) => c.toBlob(r, "image/jpeg", 0.9));
+    c.width = Math.round(src.w * scale); c.height = Math.round(src.h * scale);
+    c.getContext("2d")!.drawImage(img, src.x, src.y, src.w, src.h, 0, 0, c.width, c.height);
+    still?.close();
+    return new Promise((r) => c.toBlob(r, "image/jpeg", 0.85));
   };
 
   return { videoRef, state, capture };
 }
 
-export type Fix = { pos: LonLat; accuracy: number; course: number | null };
+const CAPTURE_MAX_SIDE = 1024;
+const STILL_TIMEOUT_MS = 2500;   // a phone that hangs on takePhoto falls back to the video frame
 
-/** GPS with course over ground (heading from the last two fixes when moving). */
-export function useGps(active: boolean) {
-  const [fix, setFix] = useState<Fix | null>(null);
-  const [denied, setDenied] = useState(false);
-  const last = useRef<LonLat | null>(null);
-  useEffect(() => {
-    if (!active || !("geolocation" in navigator)) return;
-    const id = navigator.geolocation.watchPosition(
-      (p) => {
-        const pos: LonLat = [p.coords.longitude, p.coords.latitude];
-        let course = p.coords.heading ?? null;
-        if (course === null && last.current && metres(last.current, pos) > 2) course = bearing(last.current, pos);
-        if (!last.current || metres(last.current, pos) > 2) last.current = pos;
-        setFix({ pos, accuracy: p.coords.accuracy, course: Number.isFinite(course as number) ? course : null });
-      },
-      (e) => setDenied(e.code === e.PERMISSION_DENIED),
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 },
-    );
-    return () => navigator.geolocation.clearWatch(id);
-  }, [active]);
-  return { fix, denied };
+type ImageCaptureLike = { takePhoto(): Promise<Blob> };
+declare const ImageCapture: { new (track: MediaStreamTrack): ImageCaptureLike } | undefined;
+
+async function stillPhoto(v: HTMLVideoElement): Promise<ImageBitmap | null> {
+  const track = (v.srcObject as MediaStream | null)?.getVideoTracks()[0];
+  if (!track || typeof ImageCapture === "undefined") return null;
+  try {
+    const shot = new ImageCapture(track).takePhoto();
+    const timeout = new Promise<null>((r) => setTimeout(() => r(null), STILL_TIMEOUT_MS));
+    const blob = await Promise.race([shot, timeout]);
+    if (!blob) return null;
+    const bmp = await createImageBitmap(blob);
+    // some phones return the still rotated relative to the video: then the crop would miss the leaf
+    if ((bmp.width > bmp.height) !== (v.videoWidth > v.videoHeight)) { bmp.close(); return null; }
+    return bmp;
+  } catch {
+    return null;
+  }
 }
-
+const CROP_MAX_SIDE = 768;
 /** Compass heading of the phone's back camera, if the device has one. */
 export function useHeading(active: boolean) {
   const [heading, setHeading] = useState<number | null>(null);
@@ -80,8 +87,10 @@ export function useHeading(active: boolean) {
 
 /** iOS asks for motion permission from a user tap. */
 export async function askMotionPermission() {
-  const D = DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> };
-  if (typeof D.requestPermission === "function") {
-    try { await D.requestPermission(); } catch { /* user said no: course over ground is used instead */ }
+  // compass (orientation) and step counting (motion) are separate permissions on iOS
+  for (const E of [DeviceOrientationEvent, DeviceMotionEvent] as unknown as { requestPermission?: () => Promise<string> }[]) {
+    if (typeof E?.requestPermission === "function") {
+      try { await E.requestPermission(); } catch { /* user said no: GPS alone is used instead */ }
+    }
   }
 }

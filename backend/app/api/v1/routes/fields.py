@@ -22,6 +22,12 @@ async def get_risk(field: FieldDep) -> RiskOut:
     return await asyncio.to_thread(fields.risk, field)
 
 
+@router.get("/{field_id}/surge")
+async def get_surge(field: FieldDep) -> dict:
+    """Next surge per pest: 15-day weather risk x how in season it is (Kisan Call Centre calls, else GBIF)."""
+    return await asyncio.to_thread(fields.surge_outlook, field)
+
+
 @router.post("/{field_id}/missed-call")
 async def missed_call(field: FieldDep, background_tasks: BackgroundTasks) -> dict[str, str | int]:
     """Dashboard stand-in for the farmer giving a missed call: same free callback as POST /ivr/webhook."""

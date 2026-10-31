@@ -12,7 +12,7 @@ export function t(key: Key, vars: Record<string, string | number> = {}, lang: La
 }
 
 const CAUSE_KEYS: Record<string, Key> = {
-  yellow_mosaic: "cause.yellow_mosaic", fungal: "cause.fungal", chewing_damage: "cause.chewing_damage",
+  yellow_mosaic: "cause.yellow_mosaic", fungal: "cause.fungal", chewing_damage: "cause.chewing_damage", girdle_beetle: "cause.girdle_beetle",
   water_stress: "cause.water_stress", nutrient: "cause.nutrient",
 };
 export const causeName = (cause: string, lang: Lang = "hi") => (CAUSE_KEYS[cause] ? t(CAUSE_KEYS[cause], {}, lang) : cause);

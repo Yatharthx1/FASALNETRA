@@ -6,9 +6,11 @@ import FarmerResult from "../components/FarmerResult";
 import { ErrorNotice, Skeleton, useAsync } from "../components/common";
 import { api } from "../lib/api";
 import { bearing, metres, polygonAcres, stepTowards, turn, type LonLat } from "../lib/geo";
-import { fmt, speak, t, type Key } from "../lib/i18n";
-import { askMotionPermission, useCamera, useGps, useHeading } from "../lib/sensors";
-import type { Case, Field } from "../types/api";
+import { causeName, fmt, speak, t, type Key } from "../lib/i18n";
+import { askMotionPermission, useCamera, useHeading } from "../lib/sensors";
+import { createTrackUploader, useFusedPosition, type Sample } from "../lib/positioning";
+import { useLeafScan, videoBox } from "../lib/leafScan";
+import type { Case, Field, Located } from "../types/api";
 
 type Step =
   | { kind: "welcome" }
@@ -25,12 +27,26 @@ const DEMO_TICK_MS = 1000;
 const TURN_RATE = 35;        // demo walker turns this many degrees per tick
 const GPS_OK_M = 30;
 const SPEAK_GAP_MS = 4500;
+const LOCATE_EVERY_MS = 60_000;
+// Auto-capture on the phone, before any upload: the leaf is found by colour, held steady and sharp, then only the
+// leaf is sent. Thresholds sit a little above the server gate (vision.quality); the server still has the final say.
+const SHARP_MIN = 350;       // Laplacian variance on the 256 px leaf crop; ~server blur score 60 (step-blur check)
+const BRIGHT_MIN = 45;       // 0-255
+const STILL_MAX = 6;         // mean change between checks: the hand is steady
+const LEAF_MIN = 0.08;       // leaf must fill this share of the frame: close enough to see spots
+const STEADY_CHECKS = 3;     // ~0.7 s of good frames in a row
+const GIVE_UP_CHECKS = 14;   // leaf in view and steady ~3 s but never "sharp": take it anyway, the server decides
 
 export default function Walk() {
   const token = new URLSearchParams(location.search).get("t") ?? "";
   const caseQ = useAsync(() => api.caseByToken(token), [token]);
-  const fieldQ = useAsync(() => api.field(), []);
-  const walkQ = useAsync(() => api.demoWalk(), []);
+  // the case says which field: the demo parcel, or one resolved from the farmer's IVR onboarding
+  const fieldId = caseQ.data?.field_id;
+  const fieldQ = useAsync(() => (fieldId ? api.field(fieldId) : new Promise<never>(() => undefined)), [fieldId]);
+  const walkQ = useAsync(() => (fieldId ? api.demoWalk(fieldId) : new Promise<never>(() => undefined)), [fieldId]);
+  // tells the live call "link khul gaya" so the voice on the phone moves on with the farmer
+  const caseId = caseQ.data?.id;
+  useEffect(() => { if (caseId) api.opened(caseId).catch(() => undefined); }, [caseId]);
 
   if (caseQ.error) return <main className="walk"><p className="notice notice-error" role="alert">{t("walk.link_bad")}</p></main>;
   if (fieldQ.error) return <main className="walk"><ErrorNotice error={fieldQ.error} onRetry={fieldQ.reload} /></main>;
@@ -46,21 +62,57 @@ function WalkFlow({ initial, field, loopPath }: { initial: Case; field: Field; l
   const [status, setStatus] = useState<{ tone: "ok" | "warn" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [trail, setTrail] = useState<LonLat[]>([]);
+  const [advice, setAdvice] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const live = step.kind !== "welcome" && step.kind !== "result";
   const cam = useCamera(live && step.kind !== "sending");
-  const { fix, denied } = useGps(live);
   const compass = useHeading(live);
+  // 5 positions a second (GPS fixes + footsteps along the compass between them), uploaded in 2 s batches
+  const uploader = useRef<ReturnType<typeof createTrackUploader> | null>(null);
+  useEffect(() => {
+    if (!live) return;
+    const u = createTrackUploader((batch: Sample[]) => api.track(kase.id, batch.map((s) => ({
+      t: s.t, lon: s.pos[0], lat: s.pos[1], accuracy: Math.min(s.accuracy, 5000), heading: s.heading,
+      speed: Math.min(s.speed, 50), source: s.source }))));
+    uploader.current = u;
+    return () => { u.stop(); uploader.current = null; };
+  }, [live, kase.id]);
+  const { sample, denied } = useFusedPosition(live, compass, (s) => uploader.current?.push(s));
+  const fix = sample ? { pos: sample.pos, accuracy: sample.accuracy, course: sample.heading } : null;
+  const fixRef = useRef(fix);
+  fixRef.current = fix;
+
+  // Which parcel is the phone in? Checked once GPS is good, then every minute (status changes are logged).
+  const [where, setWhere] = useState<Located | null>(null);
+  const locatedAt = useRef(0);
+  useEffect(() => {
+    if (!sample || sample.accuracy > GPS_OK_M || Date.now() - locatedAt.current < LOCATE_EVERY_MS) return;
+    locatedAt.current = Date.now();
+    api.locate(kase.id, { lon: sample.pos[0], lat: sample.pos[1], accuracy: sample.accuracy }).then((w) => {
+      setWhere((prev) => {
+        if (w.status === "away" && prev?.status !== "away") speak(t("walk.where.away", { km: fmt(w.distance_m / 1000, 1) }));
+        return w;
+      });
+    }).catch(() => undefined);
+  }, [sample, kase.id]);
+  const leaf = useLeafScan(cam.videoRef, step.kind === "photo" && cam.state === "on" && !busy);
+  const leafClose = !!leaf?.box && leaf.leafFrac >= LEAF_MIN;
+  const frameHint: Key | null = !leaf ? null
+    : leaf.bright < BRIGHT_MIN ? "walk.photo.hint.dark"
+      : !leaf.box ? "walk.photo.hint.no_leaf"
+        : !leafClose ? "walk.photo.hint.closer"
+          : leaf.sharp < SHARP_MIN || leaf.motion > STILL_MAX ? "walk.photo.hint.blurry" : "walk.photo.hint.ready";
 
   // Demo walker: used when there is no usable GPS (laptop demo, indoors) or ?demo=1.
   const forcedDemo = new URLSearchParams(location.search).get("demo") === "1";
   const [noGps, setNoGps] = useState(false);
   useEffect(() => {
+    // samples arrive 5 times a second, so poll the latest one instead of waiting for a quiet spell
     if (!live) return;
-    const id = setTimeout(() => setNoGps(!fix || fix.accuracy > GPS_OK_M), 4000);
-    return () => clearTimeout(id);
-  }, [live, fix]);
+    const id = setInterval(() => { const f = fixRef.current; setNoGps(!f || f.accuracy > GPS_OK_M); }, 4000);
+    return () => clearInterval(id);
+  }, [live]);
   const demo = forcedDemo || denied || noGps;
   const start = field.geometry.coordinates[0][0] as LonLat;
   const [demoPos, setDemoPos] = useState<LonLat>(start);
@@ -120,15 +172,34 @@ function WalkFlow({ initial, field, loopPath }: { initial: Case; field: Field; l
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, pos?.[0], pos?.[1], arrived]);
 
+  // Auto-capture: the leaf close, bright, steady and sharp for ~0.7 s takes the photo (or ~3 s steady at all);
+  // the shutter still works by hand.
+  const steady = useRef({ ready: 0, held: 0 });
+  useEffect(() => {
+    const s = steady.current;
+    s.ready = frameHint === "walk.photo.hint.ready" ? s.ready + 1 : 0;
+    s.held = leafClose && leaf!.motion <= STILL_MAX && leaf!.bright >= BRIGHT_MIN ? s.held + 1 : 0;
+    if ((s.ready >= STEADY_CHECKS || s.held >= GIVE_UP_CHECKS) && step.kind === "photo" && !busy) {
+      steady.current = { ready: 0, held: 0 };
+      void takePhoto();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaf]);
+
   async function begin() {
     await askMotionPermission();
     setStep({ kind: "guide", cell: 0 });
   }
 
+  // set synchronously: auto-capture can fire again before the busy state re-renders (seen on a real phone)
+  const uploading = useRef(false);
+
   async function takePhoto(file?: Blob | null) {
-    if (step.kind !== "photo") return;
-    const blob = file ?? (await cam.capture());
-    if (!blob) { fileRef.current?.click(); return; }
+    if (step.kind !== "photo" || uploading.current) return;
+    uploading.current = true;
+    const v = cam.videoRef.current;
+    const blob = file ?? (await cam.capture(leaf && v ? videoBox(leaf, v) : null));
+    if (!blob) { uploading.current = false; fileRef.current?.click(); return; }
     setBusy(true);
     setStatus({ tone: "warn", text: t("walk.photo.checking") });
     try {
@@ -144,6 +215,11 @@ function WalkFlow({ initial, field, loopPath }: { initial: Case; field: Field; l
         return;
       }
       setStatus({ tone: "ok", text: t("walk.photo.ok") });
+      const a = photo.vision.advice;
+      if (a) {
+        setAdvice([t("walk.photo.suspect", { name: causeName(a.cause) }),
+          a.product ? t("walk.photo.use", { product: a.product }) : t("walk.photo.no_spray")].join(" · "));
+      }
       setKase(await api.getCase(kase.id));
       if (step.side === "top") setStep({ kind: "photo", cell: step.cell, side: "under" });
       else if (step.cell + 1 < targets.length) setStep({ kind: "guide", cell: step.cell + 1 });
@@ -152,6 +228,7 @@ function WalkFlow({ initial, field, loopPath }: { initial: Case; field: Field; l
     } catch (e) {
       setStatus({ tone: "error", text: (e as Error).message });
     } finally {
+      uploading.current = false;
       setBusy(false);
     }
   }
@@ -215,6 +292,7 @@ function WalkFlow({ initial, field, loopPath }: { initial: Case; field: Field; l
         turnDeg={step.kind === "photo" || step.kind === "sending" ? null : turnDeg}
         arrived={step.kind === "photo" || (step.kind === "guide" && arrived)}
         inset={inset}
+        leaf={step.kind === "photo" ? leaf : null}
         top={
           <div className="cam-head">
             <p className="cam-title">{stepTitle}</p>
@@ -224,7 +302,31 @@ function WalkFlow({ initial, field, loopPath }: { initial: Case; field: Field; l
               </p>
             )}
             {instruction && <p className="cam-say" aria-live="polite">{t(instruction)}</p>}
+            {step.kind === "guide" && targets[step.cell].reason && (
+              <p className="cam-chip">{t(`walk.reason.${targets[step.cell].reason}` as Key)}</p>
+            )}
+            {step.kind === "photo" && cam.state === "on" && (
+              <p className={`cam-chip ${frameHint === "walk.photo.hint.ready" ? "" : "warn"}`} aria-live="polite">
+                {frameHint ? t(frameHint) : t("walk.photo.auto")}
+              </p>
+            )}
+            {step.kind === "photo" && leaf?.box && (
+              <p className="cam-chip num">{t("walk.photo.leaf_read", { y: leaf.yellowPct, b: leaf.brownPct })}</p>
+            )}
+            {advice && step.kind !== "photo" && <p className="cam-chip">{advice}</p>}
             {demo && <p className="cam-chip">{t("walk.demo_mode")}</p>}
+            {!demo && sample && (
+              <p className="cam-chip num">{t("walk.gps.live", { m: Math.round(sample.accuracy) })}</p>
+            )}
+            {where && !demo && (
+              <p className={`cam-chip ${where.status === "on_field" ? "" : "warn"}`}>
+                {where.status === "on_field"
+                  ? t("walk.where.on_field", { khasra: where.parcel?.khasra ?? field.khasra })
+                  : where.status === "near_field"
+                    ? t("walk.where.near_field", { m: Math.round(where.distance_m) })
+                    : t("walk.where.away", { km: fmt(where.distance_m / 1000, 1) })}
+              </p>
+            )}
             {cam.state === "denied" && <p className="cam-chip warn">{t("walk.camera_denied")}</p>}
           </div>
         }
@@ -242,7 +344,8 @@ function WalkFlow({ initial, field, loopPath }: { initial: Case; field: Field; l
             </p>
             <input ref={fileRef} id="photo-input" className="sr-only" type="file" accept="image/*" capture="environment"
               onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void takePhoto(f); }} />
-            <button type="button" className="shutter" disabled={busy} onClick={() => void takePhoto()} aria-label={t("walk.photo.take")}>
+            <button type="button" className={`shutter ${frameHint === "walk.photo.hint.ready" ? "shutter-ready" : ""}`} disabled={busy}
+              onClick={() => void takePhoto()} aria-label={t("walk.photo.take")}>
               <span />
             </button>
           </>

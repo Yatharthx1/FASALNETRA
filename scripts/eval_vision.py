@@ -40,6 +40,7 @@ FOLDER_KEYWORDS = [
     ("vein necrosis", None), ("vein_necrosis", None), ("dry", None),   # virus/drought classes we do not label
     ("rust", "fungal"), ("septoria", "fungal"), ("frog", "fungal"), ("blight", "fungal"),
     ("spot", "fungal"), ("fungal", "fungal"),
+    ("girdle", "girdle_beetle"),
     ("caterpillar", "chewing_damage"), ("semilooper", "chewing_damage"), ("looper", "chewing_damage"),
     ("defoli", "chewing_damage"), ("chew", "chewing_damage"), ("pest", "chewing_damage"),
 ]

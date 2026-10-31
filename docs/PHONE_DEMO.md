@@ -54,10 +54,12 @@ The demo farmer's phone is re-applied to the demo field at startup.
 | Who | Screen | What happens |
 |---|---|---|
 | Farmer phone | dials the Twilio number | call is rejected (free), callback in ~3 s |
-| Farmer phone | call | symptom menu (1-4), then "SMS bhej diya", whitefly question (1/2) |
-| Farmer phone | SMS | link opens `/walk`: camera, voice-guided spots, walk round the patch |
-| Farmer phone | `/walk` result | high: confidence % + dose. Not high: no %, Didi offer spoken + button |
-| Farmer phone | call (not high) | "abhi pakka nahin... Drone Didi ke liye 1"; key 1 books her check |
+| New farmer phone | call | onboarding (language, crop, sowing, PIN, village, neighbour crop, grassy border); the field is mapped, Sentinel-2 walk stops picked and the SMS link sent while the call continues |
+| Farmer phone | call | registered farmer: symptom menu (1-4), whitefly question (1/2), then "SMS mein link aaya hai, dabaiye" |
+| Farmer phone | call (stays on) | **live hold**: keep the call on speaker; every ~6 s `/ivr/live` checks the case: "link khul gaya", "photo mil gayi, ... ka shak", "photo dhundhli hai" |
+| Farmer phone | SMS | link opens `/walk`: camera, red line to each stop (with why: satellite patch, far edge, low spot, grassy border), leaf auto-captured when sharp and steady |
+| Farmer phone | call (same one) | evidence ready: the result (cause, zone, dose from the ICAR table) is spoken in the same call; key 1 books Drone Didi |
+| Farmer phone | callback | farmer hung up or 5 min passed: the result comes as a new call instead |
 | Didi (2nd phone or laptop) | `https://<tunnel>/didi` | banner + spoken alert; tap "phone par soochna chalu karein" once for notifications |
 | Projector | `https://<tunnel>/` or `localhost:5173` | dashboard: map + live event feed |
 
@@ -71,3 +73,12 @@ triggers the same callback to `DEMO_FARMER_PHONE`.
 - SMS from a non-Indian Twilio number to Indian numbers can be delayed or filtered (DLT rules).
   Test the SMS once before the demo. If it does not arrive, open the link shown on the dashboard
   ("Open walk page") on the phone instead.
+
+## Photo model
+
+- `VISION_PROVIDER=gemini` (key set): Gemini LLM, closed label list incl. girdle beetle; a trained offline model, if present, adds a second vote.
+- `VISION_PROVIDER=local`: offline CLIP model, no internet at classify time (weights ~600 MB download once).
+  Without a trained head it runs zero-shot, capped at 0.6 confidence so it can never decide "high" alone.
+  Train the head: put the soybean datasets under `data/raw/` (see `scripts/eval_vision.py`), then `python scripts/train_vision.py`.
+- `VISION_PROVIDER=mock`: fixed yellow-mosaic answer for demos and tests.
+- Every photo result carries `advice` (cause, product, dose per acre) looked up in `data/seed/advisory_table.json`, never from the model.

@@ -10,6 +10,8 @@ Implements:
 
 from typing import Any
 
+from backend.app.core.config import settings
+
 # Farmer-initiated report (missed call -> callback): key -> symptom answer id read by the evidence card
 REPORT_SYMPTOMS = {
     "1": "yellow_mosaic_patches",   # पत्तों पर पीले-हरे धब्बे
@@ -93,19 +95,22 @@ def get_registered_flow_config(flow: str, step: str, farmer: Any = None,
             return {
                 "step": "whitefly_question",
                 "prompt_id": "p02_whitefly_question",
-                "prompt_text": "फोटो का लिंक SMS से भेज दिया है। एक सवाल: क्या पत्तों के नीचे छोटी सफेद मक्खियां दिख रही हैं? हां के लिए 1, नहीं के लिए 2 दबाइए। दोबारा सुनने के लिए 9 दबाइए।",
+                "prompt_text": f"फोटो का लिंक {settings.link_channel_hi} से भेज दिया है। एक सवाल: क्या पत्तों के नीचे छोटी सफेद मक्खियां दिख रही हैं? हां के लिए 1, नहीं के लिए 2 दबाइए। दोबारा सुनने के लिए 9 दबाइए।",
                 "num_digits": 1,
                 "valid_digits": ["1", "2"],
                 "hangup": False,
             }
         elif step == "sms_dispatched":
+            # Live hold: the call stays on while the farmer opens the link; /ivr/live speaks progress and the result
             return {
                 "step": "sms_dispatched",
-                "prompt_id": "p02_sms_dispatched",
-                "prompt_text": "धन्यवाद! फोटो अपलोड करने का लिंक आपके फोन पर SMS द्वारा भेज दिया गया है। कृपया जल्द से जल्द फोटो भेजें।",
+                "prompt_id": "p02_live_hold",
+                "prompt_text": f"धन्यवाद! आपके फोन पर {settings.link_channel_hi} में एक लिंक आया है, उसे दबाइए। कॉल मत काटिए, फोन स्पीकर पर रखिए। "
+                               "कैमरा खुलेगा, लाल लाइन के साथ चलकर बीमार पत्तों की फोटो लीजिए। फोटो आते ही मैं यहीं बताऊंगी।",
                 "num_digits": 0,
                 "valid_digits": [],
-                "hangup": True,
+                "hangup": False,
+                "live": True,
             }
 
     # ==========================================

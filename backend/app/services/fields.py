@@ -11,9 +11,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
-from backend.app.db.models import FieldOwner, Field
+from backend.app.db.models import Field, FieldOwner
 from backend.app.services.mapping import geo, satellite
-from backend.app.services.risk import rules, weather
+from backend.app.services.risk import rules, surge, weather
 
 FORECAST_DAYS = 15
 SPRAY_MAX_WIND_KMH = 10.0
@@ -50,6 +50,11 @@ def risk(f: Field) -> dict:
             "rule_status": rules.RULES["yellow_mosaic"]["status"], "days": days}
 
 
+def surge_outlook(f: Field) -> dict:
+    """Next surge per pest over the forecast days, with the seasonal calendar behind it."""
+    return {"field_id": f.id, **surge.outlook(risk(f)["days"], today())}
+
+
 def weather_fit(f: Field) -> dict[str, float]:
     scored = rules.score_days(_season_days(f), f.sowing_date)
     return rules.weather_vote(scored, str(today()))
@@ -60,8 +65,13 @@ def advisory_flags() -> dict[str, bool]:
     return {"yellow_mosaic": True} if settings.demo_mode else {}
 
 
+def _scan_source(f: Field) -> str:
+    """Satellite cache to read. Fields resolved from an IVR onboarding share the demo cache (khasra lookup is mocked)."""
+    return f.id if (satellite.PROCESSED / f.id / "meta.json").exists() else "demo"
+
+
 def scan(f: Field) -> dict:
-    return {"field_id": f.id, **satellite.scan(f.id, f.geometry, today())}
+    return {"field_id": f.id, **satellite.scan(_scan_source(f), f.geometry, today())}
 
 
 def demo_walk(f: Field) -> list[tuple[float, float]]:
@@ -108,6 +118,45 @@ def neighbours_within(f: Field, metres: float = 500) -> list[dict]:
         if d <= metres:
             out.append({"khasra": p["khasra"], "owner": p["owner"], "distance_m": round(d)})
     return sorted(out, key=lambda x: x["distance_m"])
+
+
+# IVR sowing-date answer -> days since sowing (middle of the bracket)
+SOWING_AGE_DAYS = {"under_15": 10, "15_30": 22, "30_60": 45, "over_60": 70}
+
+
+def _hero() -> dict:
+    data = json.loads(settings.demo_field_geojson.read_text(encoding="utf-8"))
+    return next(x for x in data["features"] if x["properties"].get("role") == "hero")
+
+
+async def field_for_onboarded(db: AsyncSession, phone: str, answers: dict) -> Field:
+    """IVR onboarding (pincode + village) -> the farmer's land parcel.
+
+    Production: village cadastral map / AgriStack lookup with consent. Hackathon: there is no open khasra API,
+    so every onboarded farmer gets the demo parcel (the only one with cached Sentinel-2), under their own name,
+    crop and sowing date. An existing field for the phone is reused.
+    """
+    owner = (await db.execute(select(FieldOwner).where(FieldOwner.phone == phone))).scalar_one_or_none()
+    if owner is not None:
+        existing = (await db.execute(select(Field).where(Field.farmer_id == owner.id))).scalars().first()
+        if existing is not None:
+            return existing
+    village = str(answers.get("village") or "")
+    if owner is None:
+        owner = FieldOwner(name="किसान भाई", phone=phone, language=answers.get("welcome", "hi"),
+                           village=village.split(" (")[0] or "-")
+        db.add(owner)
+        await db.flush()
+    hero = _hero()
+    c = shape(hero["geometry"]).centroid
+    age = SOWING_AGE_DAYS.get(answers.get("sowing_date", ""), settings.demo_sowing_age_days)
+    crop = answers.get("crop") if answers.get("crop") not in (None, "other", "pata_nahi") else "soybean"
+    f = Field(id=f"ivr-{phone.lstrip('+')[-10:]}", farmer_id=owner.id, khasra=hero["properties"]["khasra"], crop=crop,
+              sowing_date=today() - timedelta(days=age), area_acres=round(geo.acres(hero["geometry"]), 2),
+              geometry=hero["geometry"], centroid_lat=c.y, centroid_lon=c.x)
+    db.add(f)
+    await db.commit()
+    return await get_field(db, f.id)
 
 
 async def seed_demo(db: AsyncSession) -> None:

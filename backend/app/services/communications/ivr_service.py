@@ -6,6 +6,7 @@ and coordinates farmer record creation.
 
 import logging
 from pathlib import Path
+from urllib.parse import parse_qs, quote, urlparse
 from typing import Any
 from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse, Gather
@@ -97,6 +98,10 @@ def generate_twiml_for_registered_step(
     if reprompt_message:
         response.say(reprompt_message, language=settings.ivr_default_language, voice="Polly.Aditi")
 
+    if step_cfg.get("live"):
+        call_sid = parse_qs(urlparse(action_url).query).get("call_sid", [""])[0]
+        return generate_twiml_live(step_cfg["prompt_text"], live_url(call_sid), prefix=response)
+
     # If this step terminates with a hangup
     if step_cfg.get("hangup"):
         audio_file = Path(settings.audio_prompt_dir) / f"{step_cfg['prompt_id']}.mp3"
@@ -127,6 +132,32 @@ def generate_twiml_for_registered_step(
     return str(response)
 
 
+def ivr_url(path: str, **query: str) -> str:
+    qs = "&".join(f"{k}={quote(v, safe='')}" for k, v in query.items())
+    return f"{settings.public_base_url}{settings.api_v1_prefix}/ivr/{path}{'?' + qs if qs else ''}"
+
+
+def live_url(call_sid: str) -> str:
+    return ivr_url("live", call_sid=call_sid)
+
+
+def generate_twiml_live(text: str, next_url: str, pause_s: int = 6, prefix: VoiceResponse | None = None) -> str:
+    """Hold the farmer on the line: say what changed (if anything), wait, then check the case again."""
+    response = prefix or VoiceResponse()
+    if text:
+        response.say(text, language=settings.ivr_default_language, voice="Polly.Aditi")
+    response.pause(length=pause_s)
+    response.redirect(next_url, method="POST")
+    return str(response)
+
+
+def generate_twiml_say_hangup(text: str) -> str:
+    response = VoiceResponse()
+    response.say(text, language=settings.ivr_default_language, voice="Polly.Aditi")
+    response.hangup()
+    return str(response)
+
+
 def trigger_outbound_call(phone: str, callback_webhook_url: str) -> str:
     """Triggers outbound phone call via Twilio or returns mock CallSid in dev/demo mode."""
     if (
@@ -140,6 +171,9 @@ def trigger_outbound_call(phone: str, callback_webhook_url: str) -> str:
                 to=phone,
                 from_=settings.twilio_phone_number,
                 url=callback_webhook_url,
+                # hang-ups during the live hold must reach /ivr/status so the result goes out as a callback
+                status_callback=ivr_url("status"),
+                status_callback_event=["completed"],
             )
             logger.info("Twilio outbound call initiated: %s to %s", call.sid, phone)
             return call.sid
@@ -181,7 +215,8 @@ REGISTERED_FIRST_STEP = {
     "followup": "followup_prompt",
     "report": "report_prompt",
 }
-REGISTERED_DONE_STEPS = ["sms_dispatched", "booking_confirmed", "followup_recorded", "completed"]
+# sms_dispatched is not done: the call holds there (live loop) until the result is spoken or it times out
+REGISTERED_DONE_STEPS = ["booking_confirmed", "followup_recorded", "completed"]
 
 
 def inbound_flow(farmer: Farmer | None, session: IVRSession | None = None) -> str:

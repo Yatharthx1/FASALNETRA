@@ -154,7 +154,7 @@ def get_step_config(step: str, answers: dict[str, Any]) -> dict[str, Any]:
         return {
             "step": "completed",
             "prompt_id": "onboarding_09_completed",
-            "prompt_text": "धन्यवाद! आपका पंजीकरण पूरा हो गया है। कृपया अपने खेत के चारों कोनों पर पीले चिपचिपे जाल लगाएं। खेत की सीमा दर्ज करने के लिए आपके फोन पर SMS लिंक भेजा गया है।",
+            "prompt_text": "धन्यवाद! आपका पंजीकरण पूरा हो गया है। सैटेलाइट से आपके खेत के वे हिस्से ढूंढ लिए हैं जहां फसल कमज़ोर दिख रही है।",
             "num_digits": 0,
             "valid_digits": [],
             "options": [],

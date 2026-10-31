@@ -9,6 +9,7 @@ import type { AppEvent, Case, IvrPrompt } from "../types/api";
 
 const LANG: Lang = "en";   // dashboard is for judges; farmer and Didi screens are Hindi
 const DEMO_TRAPS = [3, 12, 5, 2];
+const LIVE_POLL_MS = 4000;
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", ""];
 
 function eventLine(e: AppEvent): string {
@@ -18,6 +19,7 @@ function eventLine(e: AppEvent): string {
     case "call_placed": return `${p.kind === "result" ? "Result" : p.kind === "followup" ? "Day +5 follow-up" : "Warning"} call ${p.simulated ? "(simulated)" : "placed"}`;
     case "key_pressed": return `Farmer pressed ${p.digit} on ${p.step}`;
     case "answer_saved": return `Answer saved: ${Object.entries(p.answers as object).map(([k, v]) => `${k}=${v ? "yes" : "no"}`).join(", ")}`;
+    case "sms_failed": return "SMS failed (link below: open it on the phone)";
     case "sms_sent": return `SMS ${p.kind === "dose" ? "with dose" : "with link"} ${p.simulated ? "(simulated)" : "sent"}`;
     case "traps_counted": return `Trap counts ${(p.counts as number[]).join(", ")}`;
     case "photo_received": return `Photo ${p.kind} spot ${Number(p.spot) + 1}: ${p.label} ${Math.round(Number(p.confidence) * 100)}%${p.retake ? ` (retake: ${p.retake})` : ""}`;
@@ -46,8 +48,23 @@ export default function Dashboard() {
 
   const refreshCase = useCallback(async (id: number) => setKase(await api.getCase(id)), []);
 
+  // Live hold (simulated call): the farmer stays on the line after the SMS link; each poll is one check,
+  // like Twilio's /ivr/live redirect loop. New lines are spoken; the result prompt ends the hold.
+  const holding = prompt?.current_step === "sms_dispatched" && !prompt.is_completed ? prompt.phone : null;
+  useEffect(() => {
+    if (!holding) return;
+    const id = setInterval(() => {
+      api.ivrPrompt(holding).then((p) => {
+        if (!p.prompt_text) return;              // nothing new: keep the last line on screen
+        setPrompt(p);
+        speak(p.prompt_text);
+      }).catch(() => undefined);
+    }, LIVE_POLL_MS);
+    return () => clearInterval(id);
+  }, [holding]);
+
   const takeLink = useCallback((e: AppEvent) => {
-    if (e.type === "sms_sent" && typeof e.payload.url === "string") {
+    if ((e.type === "sms_sent" || e.type === "sms_failed") && typeof e.payload.url === "string") {
       const u = new URL(e.payload.url);
       setLink(`${location.origin}${u.pathname}${u.search}`);   // same origin as the dashboard (proxy)
     }

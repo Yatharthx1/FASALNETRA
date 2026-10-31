@@ -1,4 +1,4 @@
-"""Twilio SMS adapter and signed SMS links. Without Twilio credentials SMS is simulated.
+"""SMS adapters (Twilio, AWS End User Messaging) and signed SMS links. Without a provider SMS is simulated.
 
 Voice calls live in ivr_service.py and the *_state_machine.py flows."""
 import hashlib
@@ -20,6 +20,7 @@ class LinkTokenError(ValueError):
 class SendResult:
     simulated: bool
     sid: str | None
+    error: str | None = None
 
 
 def make_token(case_id: int, now: float | None = None) -> str:
@@ -52,9 +53,42 @@ def _client():
     return Client(settings.twilio_account_sid, settings.twilio_auth_token)
 
 
+def _send_aws(to: str, body: str) -> SendResult:
+    """AWS End User Messaging SMS (pinpoint-sms-voice-v2); credentials from the usual AWS chain (profile / EC2 role)."""
+    import boto3
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    req = {"DestinationPhoneNumber": to, "MessageBody": body, "MessageType": "TRANSACTIONAL"}
+    if settings.aws_sms_sender_id:
+        req["OriginationIdentity"] = settings.aws_sms_sender_id
+    if to.startswith("+91") and settings.aws_sms_entity_id and settings.aws_sms_template_id:
+        req["DestinationCountryParameters"] = {"IN_ENTITY_ID": settings.aws_sms_entity_id,
+                                               "IN_TEMPLATE_ID": settings.aws_sms_template_id}
+    try:
+        resp = boto3.client("pinpoint-sms-voice-v2", region_name=settings.aws_sms_region).send_text_message(**req)
+    except (BotoCoreError, ClientError) as exc:   # sandbox cap, unverified number, missing DLT IDs ...
+        log.warning("AWS SMS to %s failed: %s", to, exc)
+        return SendResult(simulated=False, sid=None, error=str(exc))
+    return SendResult(simulated=False, sid=resp["MessageId"])
+
+
 def send_sms(to: str, body: str) -> SendResult:
-    if not settings.twilio_enabled:
+    channel = settings.sms_channel
+    from_ = settings.twilio_phone_number
+    if channel == "aws":
+        return _send_aws(to, body)
+    if channel == "whatsapp":
+        # WhatsApp is not under India's DLT SMS rules; the sandbox delivers free text to numbers that joined it
+        to, from_ = f"whatsapp:{to}", f"whatsapp:{settings.twilio_whatsapp_from}"
+    elif channel != "twilio":
         log.info("SMS (simulated) to %s: %s", to, body)
         return SendResult(simulated=True, sid=None)
-    msg = _client().messages.create(to=to, from_=settings.twilio_phone_number, body=body)
+    from twilio.base.exceptions import TwilioException
+
+    try:
+        msg = _client().messages.create(to=to, from_=from_, body=body)
+    except TwilioException as exc:
+        # e.g. trial accounts may only send predefined templates; a failed SMS must never drop the live call
+        log.warning("SMS to %s failed: %s", to, exc)
+        return SendResult(simulated=False, sid=None, error=str(exc))
     return SendResult(simulated=False, sid=msg.sid)

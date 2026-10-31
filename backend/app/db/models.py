@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import JSON, BigInteger, Date, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.database import Base
@@ -98,3 +98,18 @@ class Event(Base):
     type: Mapped[str] = mapped_column(String(40))
     case_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class GpsFix(Base):
+    """Phone position samples from the walk page: real GPS fixes and the 5 Hz fused track between them."""
+    __tablename__ = "gps_fixes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    case_id: Mapped[int] = mapped_column(ForeignKey("cases.id"), index=True)
+    t_ms: Mapped[int] = mapped_column(BigInteger)                  # phone clock, ms since epoch (> 32 bit)
+    lat: Mapped[float] = mapped_column(Float)
+    lon: Mapped[float] = mapped_column(Float)
+    accuracy_m: Mapped[float] = mapped_column(Float)
+    heading: Mapped[float | None] = mapped_column(Float, nullable=True)
+    speed: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(8))                 # gps | steps | hold

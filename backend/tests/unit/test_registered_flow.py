@@ -73,7 +73,9 @@ def test_registered_farmer_p02_warning_call_and_sms():
             f"/api/v1/ivr/registered/step?call_sid=session-{phone.replace('+', '')}",
             data={"Digits": "1"},
         )
-        assert "<Hangup" in r.text
+        # the call holds on the line while the farmer opens the link (live loop), it does not hang up
+        assert "<Hangup" not in r.text
+        assert "<Pause" in r.text and "/ivr/live?call_sid=" in r.text
 
         # Verify session records SMS dispatch and the answer
         db = SessionLocal()
@@ -128,3 +130,9 @@ def test_registered_farmer_state_switching_api():
         data = r.json()
         assert data["is_registered"] is True
         assert data["flow"] == "warning"
+
+
+def test_live_endpoint_hangs_up_politely_when_no_call_is_holding():
+    with TestClient(app) as client:
+        r = client.post("/api/v1/ivr/live?call_sid=nobody")
+        assert r.status_code == 200 and "<Hangup" in r.text

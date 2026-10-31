@@ -1,8 +1,9 @@
 """Evidence card: every signal votes, confidence = share of all votes won by the top cause.
 
 Weights follow the PRD (photo AI 3, traps 2, keypad 2, weather 2, crop stage 1,
-advisory 1) plus the independent CLIP photo vote, the satellite patch and
-neighbouring confirmed cases. A signal's own uncertainty is not given to any
+advisory 1) plus the independent second photo vote, the satellite patch,
+neighbouring confirmed cases and the field profile from IVR onboarding
+(neighbour crop, grassy border: a weak prior, never enough on its own). A signal's own uncertainty is not given to any
 cause, so a doubtful signal lowers confidence instead of inventing support.
 
 Routing (the user flow):
@@ -12,12 +13,19 @@ Routing (the user flow):
 """
 from backend.app.services import advisory
 
-PEST_CAUSES = ["yellow_mosaic", "fungal", "chewing_damage"]
+PEST_CAUSES = ["yellow_mosaic", "fungal", "chewing_damage", "girdle_beetle"]
+# a compact, growing satellite patch is how spreading causes look; girdle beetle cuts scattered single plants
+PATCH_CAUSES = ["yellow_mosaic", "fungal", "chewing_damage"]
 CAUSES = PEST_CAUSES + ["water_stress", "nutrient"]
-FIELD_SIGNALS = {"photo_ai", "photo_match", "traps", "keypad"}
+FIELD_SIGNALS = {"photo_ai", "photo_match", "photo_expert", "traps", "keypad"}
+PRIOR_SIGNALS = {"field_profile", "season"}   # what is usual for this field / time of year: never an observation
 
 WEIGHTS = {"photo_ai": 3.0, "photo_match": 1.5, "traps": 2.0, "keypad": 2.0, "weather": 2.0,
-           "crop_stage": 1.0, "advisory": 1.0, "satellite": 1.0, "neighbours": 1.0}
+           "crop_stage": 1.0, "advisory": 1.0, "satellite": 1.0, "neighbours": 1.0, "field_profile": 0.5,
+           # Kindwise crop.health / plant.id: a crop-disease model independent of ours, on the same photos
+           "photo_expert": 2.0,
+           # pest more active than usual this week: Kisan Call Centre questions, else GBIF records (seasonality.py)
+           "season": 1.0}
 BLURRY_FACTOR = 0.5
 HIGH, MEDIUM = 0.75, 0.50
 MIN_AGREEING = 3
@@ -36,7 +44,23 @@ KEYPAD_YES = {
     "whole_field_pale": "nutrient",
 }
 PHOTO_TO_CAUSE = {"yellow_mosaic": "yellow_mosaic", "fungal": "fungal", "chewing_damage": "chewing_damage",
+                  "girdle_beetle": "girdle_beetle",
                   "uniform_yellowing": "nutrient"}   # even yellowing: nutrient or water, never a pest spray
+
+
+def _field_profile(profile: dict | None) -> dict[str, float]:
+    """IVR onboarding answers. Urad/moong next door carry the mosaic virus and its whitefly; a grassy border
+    shelters whitefly and the caterpillars' and girdle beetle's alternate hosts."""
+    if not profile:
+        return {}
+    p: dict[str, float] = {}
+    if profile.get("neighbor_crop") == "urad_moong":
+        p["yellow_mosaic"] = p.get("yellow_mosaic", 0) + 1.0
+    if profile.get("grassy_border") == "yes":
+        for c, v in {"yellow_mosaic": 0.4, "chewing_damage": 0.3, "girdle_beetle": 0.3}.items():
+            p[c] = p.get(c, 0) + v
+    total = sum(p.values())
+    return {c: v / total for c, v in p.items()} if total else {}
 
 
 def _photo(p: dict | None) -> dict[str, float]:
@@ -53,8 +77,12 @@ def _keypad(answers: dict[str, bool] | None) -> dict[str, float]:
 def _weather(scores: dict[str, float] | None) -> dict[str, float]:
     if not scores:
         return {}
-    total = sum(scores.values())
-    return {c: s * s / total for c, s in scores.items() if total}   # strong rule keeps most of its vote
+    # Share the vote by s^3, scaled by the best fit: a clearly dominant rule keeps most of its vote however many
+    # pests are profiled (s^2 / sum(s) fell from 0.50 to 0.41 just by adding girdle beetle), and weak weather
+    # (best fit low) still gives little support overall.
+    cubes = {c: s ** 3 for c, s in scores.items()}
+    total, best = sum(cubes.values()), max(scores.values())
+    return {c: best * v / total for c, v in cubes.items()} if total else {}
 
 
 def _satellite(s: dict | None) -> dict[str, float]:
@@ -65,7 +93,7 @@ def _satellite(s: dict | None) -> dict[str, float]:
     if s["low_spot_overlap"] >= LOW_SPOT_VETO or (s.get("water_signal") or 0) < -1.5:
         return {"water_stress": s["strength"]}
     if s["pattern"] == "patch":
-        return {c: s["strength"] / len(PEST_CAUSES) for c in PEST_CAUSES}
+        return {c: s["strength"] / len(PATCH_CAUSES) for c in PATCH_CAUSES}
     return {}
 
 
@@ -80,7 +108,9 @@ def _supports(p: dict[str, float]) -> str | None:
 def build(*, photo_ai: dict | None = None, photo_match: dict | None = None, trap_counts: list[int] | None = None,
           keypad: dict[str, bool] | None = None, weather_scores: dict[str, float] | None = None, das: int | None = None,
           advisory_flags: dict[str, bool] | None = None, satellite: dict | None = None,
-          neighbour_cases: list[str] | None = None, zone_acres: float | None = None) -> dict:
+          neighbour_cases: list[str] | None = None, zone_acres: float | None = None,
+          field_profile: dict | None = None, photo_expert: dict | None = None,
+          season: dict[str, float] | None = None) -> dict:
     signals: dict[str, tuple[float, dict[str, float]]] = {}
 
     if photo_ai is not None:
@@ -88,6 +118,11 @@ def build(*, photo_ai: dict | None = None, photo_match: dict | None = None, trap
         signals["photo_ai"] = (w, _photo(photo_ai))
     if photo_match is not None:
         signals["photo_match"] = (WEIGHTS["photo_match"], _photo(photo_match))
+    if photo_expert is not None:
+        signals["photo_expert"] = (WEIGHTS["photo_expert"], _photo(photo_expert))
+    if season:
+        top = max(season.values())
+        signals["season"] = (WEIGHTS["season"], {c: top * v / sum(season.values()) for c, v in season.items()})
     if trap_counts:
         signals["traps"] = (WEIGHTS["traps"], {"yellow_mosaic": min(1.0, max(trap_counts) / TRAP_WHITEFLY_FULL)})
     if keypad:
@@ -106,6 +141,9 @@ def build(*, photo_ai: dict | None = None, photo_match: dict | None = None, trap
         signals["neighbours"] = (WEIGHTS["neighbours"],
                                  {c: neighbour_cases.count(c) / len(neighbour_cases) for c in set(neighbour_cases)})
 
+    if field_profile and _field_profile(field_profile):
+        signals["field_profile"] = (WEIGHTS["field_profile"], _field_profile(field_profile))
+
     total_w = sum(w for w, _ in signals.values()) or 1.0
     votes = {c: sum(w * p.get(c, 0.0) for w, p in signals.values()) for c in CAUSES}
     top = max(votes, key=votes.get)
@@ -113,7 +151,8 @@ def build(*, photo_ai: dict | None = None, photo_match: dict | None = None, trap
     agreeing = [name for name, (_, p) in signals.items() if _supports(p) == top]
     has_field = any(n in FIELD_SIGNALS for n in agreeing)
 
-    if confidence >= HIGH and has_field and len(agreeing) >= MIN_AGREEING:
+    independent = [n for n in agreeing if n not in PRIOR_SIGNALS]   # priors are not observations
+    if confidence >= HIGH and has_field and len(independent) >= MIN_AGREEING:
         level = "high"
     elif confidence >= MEDIUM:
         level = "medium"

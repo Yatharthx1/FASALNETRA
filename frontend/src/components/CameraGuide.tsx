@@ -1,4 +1,5 @@
 import type { ReactNode, RefObject } from "react";
+import type { LeafScan } from "../lib/leafScan";
 
 interface Props {
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -9,6 +10,8 @@ interface Props {
   top: ReactNode;
   inset?: ReactNode;
   children?: ReactNode;
+  /** Live leaf found on the phone: outline plus yellow / brown patches, drawn over the video. */
+  leaf?: LeafScan | null;
 }
 
 const VB_W = 100, VB_H = 160;
@@ -40,7 +43,26 @@ function ribbon(turnDeg: number) {
   return { body: [...left, ...right].join(" "), centre: centre.join(" "), chevrons, end: p2 };
 }
 
-export default function CameraGuide({ videoRef, cameraOn, turnDeg, arrived, top, inset, children }: Props) {
+/** Corner brackets round the leaf and its yellow / brown patches. Same "slice" fit as the video's object-fit: cover. */
+function LeafOverlay({ leaf }: { leaf: LeafScan }) {
+  const b = leaf.box!;
+  const k = Math.min(b.w, b.h) * 0.22;
+  const corners = [
+    `M${b.x},${b.y + k} V${b.y} H${b.x + k}`, `M${b.x + b.w - k},${b.y} H${b.x + b.w} V${b.y + k}`,
+    `M${b.x + b.w},${b.y + b.h - k} V${b.y + b.h} H${b.x + b.w - k}`, `M${b.x + k},${b.y + b.h} H${b.x} V${b.y + b.h - k}`,
+  ];
+  return (
+    <svg className="cam-overlay" viewBox={`0 0 ${leaf.w} ${leaf.h}`} preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      {leaf.cells.map((c) => (
+        <rect key={`${c.x}-${c.y}`} x={c.x} y={c.y} width={leaf.cell} height={leaf.cell}
+          fill={c.kind === "yellow" ? "#F2C230" : "#B5542B"} fillOpacity="0.55" />
+      ))}
+      {corners.map((d) => <path key={d} d={d} fill="none" stroke="#FFFDF8" strokeWidth="1.4" strokeLinecap="round" />)}
+    </svg>
+  );
+}
+
+export default function CameraGuide({ videoRef, cameraOn, turnDeg, arrived, top, inset, children, leaf }: Props) {
   const back = turnDeg !== null && Math.abs(turnDeg) > 110;
   const r = ribbon(turnDeg ?? 0);
   return (
@@ -65,6 +87,8 @@ export default function CameraGuide({ videoRef, cameraOn, turnDeg, arrived, top,
           </g>
         )}
       </svg>
+
+      {leaf?.box && <LeafOverlay leaf={leaf} />}
 
       {back && !arrived && (
         <div className="cam-back" aria-hidden="true">

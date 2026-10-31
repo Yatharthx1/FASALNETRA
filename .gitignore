@@ -37,3 +37,7 @@ artifacts/*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Build caches and local backups
+*.tsbuildinfo
+*.bak
