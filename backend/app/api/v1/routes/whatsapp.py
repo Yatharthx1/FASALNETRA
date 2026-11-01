@@ -251,8 +251,9 @@ async def configure() -> dict:
 
 
 async def configure_on_startup() -> None:
-    """Only on a public HTTPS deployment: waAPI cannot reach localhost."""
-    if not (waapi.enabled() and settings.public_base_url.startswith("https://")):
+    """Only on a public HTTPS deployment: waAPI cannot reach localhost. A front for another backend (API_UPSTREAM)
+    leaves the webhook to that backend."""
+    if settings.api_upstream or not (waapi.enabled() and settings.public_base_url.startswith("https://")):
         return
     try:
         await configure()

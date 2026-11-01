@@ -35,6 +35,9 @@ class Settings(BaseSettings):
 
     # Public tunnel / URL
     public_base_url: str = "http://localhost:8000"
+    # Set on the server to make it a front for another backend (e.g. the laptop's tunnel): /api and /uploads are
+    # forwarded there, so the hosted Didi portal shows the laptop's calls, tickets and photos. Blank = serve itself.
+    api_upstream: str = ""
 
     # Twilio Voice and SMS: left blank -> calls and SMS are simulated
     twilio_account_sid: str = ""

@@ -2,9 +2,10 @@ import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+import httpx
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 
@@ -55,6 +56,27 @@ async def ensure_ready() -> None:
         _ready = True
 
 
+_upstream: httpx.AsyncClient | None = None
+# connection-level and body-framing headers: set again by each hop (httpx already decoded any gzip body)
+_HOP_HEADERS = {"host", "connection", "content-length", "content-encoding", "transfer-encoding", "keep-alive"}
+
+
+async def _forward(request: Request) -> Response:
+    """Pass one request to API_UPSTREAM and return its answer as is."""
+    global _upstream
+    if _upstream is None:
+        _upstream = httpx.AsyncClient(base_url=settings.api_upstream.rstrip("/"), timeout=30)
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in _HOP_HEADERS}
+    headers["bypass-tunnel-reminder"] = "1"   # loca.lt: skip the "click to continue" page for API calls
+    try:
+        r = await _upstream.request(request.method, request.url.path, params=request.query_params,
+                                    headers=headers, content=await request.body())
+    except httpx.HTTPError as exc:
+        return JSONResponse({"detail": f"Laptop backend not reachable: {exc.__class__.__name__}"}, status_code=502)
+    return Response(r.content, status_code=r.status_code,
+                    headers={k: v for k, v in r.headers.items() if k.lower() not in _HOP_HEADERS})
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await ensure_ready()
@@ -78,6 +100,13 @@ def create_app() -> FastAPI:
     async def ready_first(request, call_next):
         await ensure_ready()
         return await call_next(request)
+
+    if settings.api_upstream:
+        @app.middleware("http")   # added last, so it runs first: proxied requests never touch this server's data
+        async def forward_to_upstream(request: Request, call_next):
+            if not request.url.path.startswith(("/api/", "/uploads/")):
+                return await call_next(request)
+            return await _forward(request)
 
     app.include_router(api_router, prefix=settings.api_v1_prefix)
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
