@@ -43,10 +43,16 @@ class Settings(BaseSettings):
     twilio_validate_signature: bool = False
 
     # Link channel: "twilio" (SMS) | "whatsapp" (Twilio WhatsApp; sandbox works on trial accounts, no DLT) |
+    # "waapi" (waapi.app: sends from the team's own WhatsApp number, no sandbox join, no Twilio needed) |
     # "aws" (AWS End User Messaging SMS) | blank = Twilio SMS when configured, else simulated.
     # AWS End User Messaging SMS needs, for India, a TRAI DLT entity + approved template and a registered sender ID;
     # a sandbox account can only text verified numbers under a $1/month cap until AWS Support lifts both.
     sms_provider: str = ""
+    waapi_instance_id: str = ""        # "waapi": waapi.app instance (a normal WhatsApp number linked by QR)
+    waapi_token: str = ""              # API token from https://waapi.app/user/api-tokens
+    waapi_webhook_secret: str = ""     # path secret of /api/v1/wa/webhook/<secret>; blank = derived from the link secret
+    whatsapp_voice_notes: bool = True  # WhatsApp IVR: each prompt also as a Hindi voice note (OpenAI TTS)
+    didi_phone: str = ""               # Drone Didi's WhatsApp: gets each new booking with the /didi link
     twilio_whatsapp_from: str = "+14155238886"   # Twilio WhatsApp sandbox number; the farmer sends "join <code>" once
     aws_sms_region: str = "ap-south-1"
     aws_sms_sender_id: str = ""        # DLT-registered sender ID (origination identity)
@@ -116,7 +122,7 @@ class Settings(BaseSettings):
     @property
     def link_channel_hi(self) -> str:
         """What the IVR calls the message the link arrives in."""
-        return "व्हाट्सऐप" if self.sms_channel == "whatsapp" else "SMS"
+        return "व्हाट्सऐप" if self.sms_channel in ("whatsapp", "waapi") else "SMS"
 
     @property
     def twilio_enabled(self) -> bool:

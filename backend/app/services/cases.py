@@ -202,7 +202,8 @@ async def on_ivr_action(db: AsyncSession, phone: str, step: str, digit: str | No
         await send_link(db, case)
     elif action == "confirm_drone_booking":
         try:
-            await book_didi(db, case)
+            job = await book_didi(db, case)
+            await alert_didi(case, job)
         except CaseStateError as exc:
             await emit(db, "booking_skipped", case.id, reason=str(exc))
     elif action in ("record_whitefly_yes", "record_whitefly_no"):
@@ -394,6 +395,19 @@ async def book_didi(db: AsyncSession, case: Case) -> DidiJob:
     await emit(db, "didi_booked", case.id, job=job.id, mode=job.mode, minutes=job.route["minutes"],
                best=job.window["best"])
     return job
+
+
+async def alert_didi(case: Case, job: DidiJob) -> None:
+    """Drone Didi's phone gets the booking on WhatsApp too, with the link to her console."""
+    if not settings.didi_phone:
+        return
+    ev = case.evidence or {}
+    spray = (ev.get("plan") or {}).get("spray") or {}
+    body = (f"🚁 नमो ड्रोन दीदी, नया काम: {case.field.farmer.name}, खसरा {case.field.khasra}। "
+            f"{CAUSE_HI.get(ev.get('cause'), ev.get('cause'))} का शक, {case.zone_acres or 0:g} एकड़ हिस्सा। "
+            + (f"दवा: {spray['product']}, {spray['quantity']:g} {spray['unit']}। " if spray else "")
+            + f"नक्शा और पूरी जानकारी: {settings.public_base_url.rstrip('/')}/didi")
+    await asyncio.to_thread(communications.send_sms, settings.didi_phone, body)
 
 
 def _flagged_zone(case: Case) -> dict:

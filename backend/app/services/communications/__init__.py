@@ -1,4 +1,4 @@
-"""SMS adapters (Twilio, AWS End User Messaging) and signed SMS links. Without a provider SMS is simulated.
+"""SMS / WhatsApp adapters (Twilio, waAPI, AWS End User Messaging) and signed SMS links. Without a provider SMS is simulated.
 
 Voice calls live in ivr_service.py and the *_state_machine.py flows."""
 import hashlib
@@ -72,11 +72,24 @@ def _send_aws(to: str, body: str) -> SendResult:
     return SendResult(simulated=False, sid=resp["MessageId"])
 
 
+def _send_waapi(to: str, body: str) -> SendResult:
+    """waapi.app: a WhatsApp number linked like WhatsApp Web; the farmer needs no sandbox opt-in."""
+    from backend.app.services.communications import waapi
+
+    try:
+        return SendResult(simulated=False, sid=waapi.send_text(to, body))
+    except waapi.WaapiError as exc:
+        log.warning("waAPI WhatsApp to %s failed: %s", to, exc)
+        return SendResult(simulated=False, sid=None, error=str(exc))
+
+
 def send_sms(to: str, body: str) -> SendResult:
     channel = settings.sms_channel
     from_ = settings.twilio_phone_number
     if channel == "aws":
         return _send_aws(to, body)
+    if channel == "waapi":
+        return _send_waapi(to, body)
     if channel == "whatsapp":
         # WhatsApp is not under India's DLT SMS rules; the sandbox delivers free text to numbers that joined it
         to, from_ = f"whatsapp:{to}", f"whatsapp:{settings.twilio_whatsapp_from}"

@@ -43,3 +43,4 @@ Thumbs.db
 # Build caches and local backups
 *.tsbuildinfo
 *.bak
+data/tts/

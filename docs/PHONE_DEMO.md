@@ -19,6 +19,10 @@ Problem level = worst photo severity from the vision model (3 high, 2 medium, el
 `DEMO_PROBLEM_LEVEL=high` in `.env` pins it if the demo photo comes back "medium".
 `DEMO_FARMER_PREREGISTERED=true` restores the old script (missed call skips onboarding).
 
+WhatsApp link through waAPI instead of the Twilio sandbox (no "join" message from the farmer's phone):
+create an instance at waapi.app (first month free with code FREEINSTANCE), scan its QR with a spare team
+WhatsApp number, then set `SMS_PROVIDER=waapi`, `WAAPI_INSTANCE_ID`, `WAAPI_TOKEN`. Voice calls still need Twilio.
+
 Rehearse without calls or WhatsApp: `python scripts/run_sim.py` (port 8001, its own database, real OpenAI
 vision), then drive the keys from `/call` or `/api/v1/ivr/simulate/*`.
 

@@ -205,7 +205,7 @@
   "walk.done.level.high": "Problem is high",
   "walk.done.level.medium": "Problem is medium",
   "walk.done.level.low": "Problem is low",
-  "walk.done.listen": "Listen to the result on the call. Press 1 for Drone Didi, 2 for self-advice, 3 to end.",
+  "walk.done.listen": "FasalNetra will tell you the result now. Then choose 1 for Drone Didi, 2 for self-advice, 3 to end.",
   "didi.sec.saved": "Saved by spraying only the patch",
   "didi.saved.battery": "battery charges saved",
   "didi.saved.pesticide": "pesticide saved",

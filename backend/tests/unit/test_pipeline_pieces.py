@@ -141,6 +141,32 @@ def test_whatsapp_channel_uses_the_sandbox_sender_and_the_call_says_whatsapp(mon
     assert "व्हाट्सऐप" in get_registered_flow_config("report", "sms_dispatched")["prompt_text"]
 
 
+def test_waapi_channel_sends_to_the_whatsapp_chat_id_and_reports_inner_errors(monkeypatch):
+    import httpx
+
+    from backend.app.core.config import settings
+    from backend.app.services import communications
+
+    calls = []
+
+    def fake_post(method, url, **kw):
+        calls.append((url, kw))
+        inner = ({"status": "success", "data": {"_data": {"id": {"_serialized": "true_919876543211@c.us_ABC"}}}}
+                 if kw["json"]["chatId"].startswith("9198") else {"status": "error", "message": "incorrect chatId format."})
+        return httpx.Response(200, json={"status": "success", "data": inner}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "request", fake_post)
+    for k, v in {"sms_provider": "waapi", "waapi_instance_id": "42", "waapi_token": "tok"}.items():
+        monkeypatch.setattr(settings, k, v)
+    ok = communications.send_sms("+919876543211", "link")
+    url, kw = calls[0]
+    assert url.endswith("/instances/42/client/action/send-message") and kw["headers"]["Authorization"] == "Bearer tok"
+    assert kw["json"] == {"chatId": "919876543211@c.us", "message": "link"} and ok.sid.endswith("ABC")
+    bad = communications.send_sms("+15550000000", "link")
+    assert bad.sid is None and "chatId" in bad.error
+    assert settings.link_channel_hi == "व्हाट्सऐप"
+
+
 def test_small_wide_leaf_crop_is_not_judged_blurry_by_stretching():
     """Phone crops are small and wide (e.g. 502 x 251); scoring them stretched to 512 x 512 failed sharp photos."""
     import numpy as np

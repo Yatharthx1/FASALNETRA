@@ -58,7 +58,10 @@ async def ensure_ready() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await ensure_ready()
+    from backend.app.api.v1.routes import whatsapp
+    setup = asyncio.create_task(whatsapp.configure_on_startup())   # waAPI webhook + call greeting, off the boot path
     yield
+    setup.cancel()
     await engine.dispose()
 
 
@@ -79,6 +82,8 @@ def create_app() -> FastAPI:
     app.include_router(api_router, prefix=settings.api_v1_prefix)
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
+    from backend.app.services.communications import tts
+    app.mount("/tts", StaticFiles(directory=tts.tts_dir()), name="tts")   # call greeting audio for waAPI
 
     # Mount audio files directory if present so Twilio can fetch pre-recorded MP3s
     audio_path = REPO_ROOT / "frontend" / "public" / "audio"
