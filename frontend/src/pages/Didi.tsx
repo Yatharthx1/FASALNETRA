@@ -284,7 +284,7 @@ function TicketDetail({ job, onBack, onChange }: { job: Job; onBack: () => void;
           {walkTrail.length > 0 && (
             <div className="map-legend-item">
               <span className="legend-dot trail" aria-hidden="true" />
-              <span>{t("didi.legend_trail")} ({walkTrail.length} GPS fixes)</span>
+              <span>{t("didi.legend_trail")}</span>
             </div>
           )}
         </div>

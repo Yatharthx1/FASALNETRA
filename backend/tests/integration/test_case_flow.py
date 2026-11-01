@@ -86,7 +86,7 @@ async def test_full_demo_flow_ends_with_a_zone_only_spray(client):
 
     said = (await client.post(f"{API}/cases/{cid}/result-call")).json()["first_prompt"]["prompt_text"]
     assert "पीला मोज़ेक का शक" in said and "समस्या का स्तर" in said
-    assert f"{walked['zone_acres']:.1f} एकड़" in said and "नमो ड्रोन दीदी" in said
+    assert "एकड़" not in said and "प्रतिशत" not in said and "नमो ड्रोन दीदी" in said   # farmer hears no numbers
     jobs_for_case = lambda js: [j for j in js if j["case_id"] == cid]  # noqa: E731
     assert not jobs_for_case((await client.get(f"{API}/didi/jobs")).json())   # not booked before the key press
     await client.post(f"{API}/ivr/simulate/registered", json={"phone": phone, "digits": "1"})
@@ -158,3 +158,28 @@ async def test_event_polling_returns_only_newer_events_and_survives_a_reset(clie
     await client.post(f"{API}/demo/reset")   # SQLite may restart ids below `last`
     after_reset = (await client.get(f"{API}/events", params={"after": fresh[-1]["id"]})).json()
     assert "demo_reset" in [e["type"] for e in after_reset]
+
+
+async def test_camera_link_is_the_walk_link_and_sends_nothing(client):
+    case = await _case(client)
+    r = (await client.get(f"{API}/cases/{case['id']}/camera-link")).json()
+    assert r["case_id"] == case["id"] and "/walk?t=" in r["url"]
+    events = (await client.get(f"{API}/events")).json()
+    assert not any(e["type"] == "sms_sent" and e["case_id"] == case["id"] for e in events)
+    assert (await client.get(f"{API}/cases/by-token", params={"t": r["url"].split("t=")[1]})).json()["id"] == case["id"]
+
+
+async def test_every_call_gets_a_fresh_camera_session_and_retires_the_old_link(client):
+    async def report_call() -> tuple[int, str]:
+        phone = (await client.post(f"{API}/fields/demo/missed-call")).json()["phone"]
+        await client.post(f"{API}/ivr/simulate/registered", json={"phone": phone})
+        await client.post(f"{API}/ivr/simulate/registered", json={"phone": phone, "digits": "1"})
+        events = (await client.get(f"{API}/events")).json()
+        sent = next(e for e in reversed(events) if e["type"] == "sms_sent")
+        return sent["case_id"], sent["payload"]["url"].split("t=")[1]
+
+    first_id, first_token = await report_call()
+    second_id, second_token = await report_call()   # first case still waiting for photos: not reused
+    assert second_id != first_id and second_token != first_token
+    assert (await client.get(f"{API}/cases/by-token", params={"t": first_token})).status_code == 410
+    assert (await client.get(f"{API}/cases/by-token", params={"t": second_token})).json()["id"] == second_id

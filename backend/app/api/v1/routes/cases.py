@@ -1,4 +1,7 @@
 from typing import Annotated
+from urllib.parse import urlparse
+
+import httpx
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
@@ -6,6 +9,7 @@ from backend.app.api.deps import CaseDep, DbDep
 from backend.app.core.config import settings
 from backend.app.schemas import (
     CallOut,
+    CameraLinkOut,
     CaseCreate,
     CaseOut,
     JobOut,
@@ -52,9 +56,12 @@ async def case_by_token(t: str, db: DbDep) -> CaseOut:
     except communications.LinkTokenError:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Link expired or invalid") from None
     try:
-        return await cases.get_case(db, case_id)
+        case = await cases.get_case(db, case_id)
     except cases.CaseNotFound:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Case not found") from None
+    if case.status == cases.SUPERSEDED:   # a newer call sent a fresh link
+        raise HTTPException(status.HTTP_410_GONE, "Link replaced by a newer one")
+    return case
 
 
 @router.get("/{case_id}", response_model=CaseOut)
@@ -85,6 +92,30 @@ async def result_call(case: CaseDep, db: DbDep) -> CallOut:
 @router.post("/{case_id}/followup-call", response_model=CallOut)
 async def followup_call(case: CaseDep, db: DbDep) -> CallOut:
     return _call_out(case.id, await cases.followup_call(db, case))
+
+
+_tunnel_password: str | None = None
+
+
+async def _loca_lt_password() -> str | None:
+    """loca.lt shows a reminder page on a device's first visit; its password is this machine's public IP."""
+    global _tunnel_password
+    if _tunnel_password is None:
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                _tunnel_password = (await client.get("https://loca.lt/mytunnelpassword")).text.strip()
+        except httpx.HTTPError:
+            return None
+    return _tunnel_password
+
+
+@router.get("/{case_id}/camera-link", response_model=CameraLinkOut)
+async def camera_link(case: CaseDep) -> CameraLinkOut:
+    """The farmer's camera page link, without sending it: the dashboard shows it to copy or scan on any device."""
+    url = communications.walk_link(case.id)
+    host = urlparse(url).hostname or ""
+    return CameraLinkOut(case_id=case.id, url=url,
+                         tunnel_password=await _loca_lt_password() if host.endswith(".loca.lt") else None)
 
 
 @router.post("/{case_id}/link", response_model=LinkOut)

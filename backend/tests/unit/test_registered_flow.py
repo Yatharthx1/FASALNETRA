@@ -103,7 +103,7 @@ def test_registered_farmer_p06_result_and_drone_booking():
         )
         assert r.status_code == 200
         assert "<Hangup" in r.text
-        assert "बुकिंग पक्की" in r.text
+        assert "बुकिंग हो गई" in r.text
 
         # Verify farmer record updated with booking
         db = SessionLocal()

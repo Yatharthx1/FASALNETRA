@@ -8,6 +8,7 @@ Implements:
   4. Day +5 Post-Spray Outcome Follow-Up
 """
 
+import re
 from typing import Any
 
 from backend.app.core.config import settings
@@ -34,11 +35,11 @@ def self_advice_text(context: dict[str, Any]) -> str:
     a = context.get("advice") or {}
     parts = [a["cultural_hi"]] if a.get("cultural_hi") else []
     if a.get("product"):
-        dose = f"{a['dose_per_acre']:g} {a['unit']} प्रति एकड़" if a.get("dose_per_acre") else ""
-        total = (f" आपके बीमार हिस्से के लिए कुल {a['quantity']:g} {a['unit']} दवा, {a['water_l']:g} लीटर पानी में मिलाइए।"
-                 if a.get("quantity") else "")
-        parts.append(f"दवा: {a['product']}, {dose}।{total} सिर्फ बीमार हिस्से में छिड़किए, पूरे खेत में नहीं। "
-                     "छिड़काव सुबह या शाम को कीजिए, जब हवा कम हो और बारिश न हो। दस्ताने और मास्क पहनिए।")
+        amount = (f"{round(a['quantity'])} {a['unit']}" if a.get("quantity")
+                  else f"हर एकड़ में {round(a['dose_per_acre'])} {a['unit']}" if a.get("dose_per_acre") else "")
+        product = re.sub(r"\s*\d+(\.\d+)?\s*%", "", a["product"])   # "Thiamethoxam 12.6% + ..." -> "Thiamethoxam + ..."
+        parts.append(f"दुकान से {product} दवा लीजिए। {amount} दवा पानी में मिलाकर सिर्फ बीमार हिस्से में छिड़किए, "
+                     "पूरे खेत में नहीं। सुबह या शाम छिड़किए, दस्ताने और मास्क पहनिए।")
     else:
         parts.append("इसमें कीटनाशक की ज़रूरत नहीं है।")
     return " ".join(parts)
@@ -47,8 +48,7 @@ def self_advice_text(context: dict[str, Any]) -> str:
 def _level_prompt(context: dict[str, Any]) -> dict[str, Any]:
     """Demo result call: the suspected problem, its level, and the 1/2/3 menu (high) or the advice (lower)."""
     level = context.get("problem_level") or "medium"
-    where = f" लगभग {context['acres']:.1f} एकड़ हिस्से में" if context.get("acres") else ""
-    head = (f"नमस्ते! आपकी फोटो की जांच हो गई है। आपकी फसल में{where} {context['name_hi']} का शक है। "
+    head = (f"नमस्ते! आपकी फोटो की जांच हो गई है। आपके खेत के एक हिस्से में {context['name_hi']} का शक है। "
             f"समस्या का स्तर {LEVEL_HI[level]} है।")
     cfg = {"step": "result_prompt", "prompt_id": f"p06_level_{level}"}
     if not context.get("can_book"):   # no pesticide for this cause: nothing for Drone Didi to spray
@@ -66,18 +66,16 @@ def _result_prompt(context: dict[str, Any]) -> dict[str, Any]:
     """Result call built from the farmer's case evidence (see services/cases.result_context)."""
     if context.get("problem_level"):
         return _level_prompt(context)
-    where = f"लगभग {context['acres']:.1f} एकड़ हिस्से" if context.get("acres") else "एक हिस्से"
-    head = (f"नमस्ते! ICAR-NSRI की सलाह और फोटो जांच के अनुसार आपके खेत के {where} में "
-            f"{context['pct']} प्रतिशत {context['name_hi']} का शक है।")
+    head = f"नमस्ते! आपकी फोटो की जांच हो गई है। आपके खेत के एक हिस्से में {context['name_hi']} का शक है।"
     cfg = {"step": "result_prompt", "prompt_id": f"p06_result_{context['action']}"}
     if context["action"] == "advise_spray":
         spray = context.get("spray")
-        dose = f" सिर्फ उसी हिस्से में {spray['quantity']:g} {spray['unit']} दवा लगेगी, पूरे खेत में नहीं।" if spray else ""
+        dose = " दवा सिर्फ उसी हिस्से में लगेगी, पूरे खेत में नहीं।" if spray else ""
         advice = f" {context['say_hi']}" if context.get("say_hi") else ""   # crop advisory (advisory/writer.py)
         text = f"{head}{advice}{dose} ड्रोन दीदी छिड़काव बुक करने के लिए 1 दबाइए। दोबारा सुनने के लिए 9 दबाइए।"
     elif context["action"] == "didi_verify":
         # Not sure yet: no percentage, just the suspicion and the offer to send Drone Didi
-        text = (f"नमस्ते! आपकी फोटो मिल गई। आपके खेत के {where} में {context['name_hi']} का शक है, पर अभी पक्का नहीं कह सकते। "
+        text = (f"नमस्ते! आपकी फोटो मिल गई। आपके खेत के एक हिस्से में {context['name_hi']} का शक है, पर अभी पक्का नहीं कह सकते। "
                 "अभी दवा मत डालिए। ड्रोन दीदी आकर खेत देखेंगी, फिर ज़रूरत हो तो सिर्फ उसी हिस्से में छिड़काव करेंगी। "
                 "ड्रोन दीदी से जुड़ने के लिए 1 दबाइए। दोबारा सुनने के लिए 9 दबाइए।")
     else:   # advise_no_pesticide / expert_check: nothing to book
@@ -129,7 +127,7 @@ def get_registered_flow_config(flow: str, step: str, farmer: Any = None,
             return {
                 "step": "warning_prompt",
                 "prompt_id": "p02_warning_call",
-                "prompt_text": "नमस्ते! ICAR-IISR की सलाह और मौसम के हिसाब से आपके खेत में सफेद मक्खी का खतरा बढ़ रहा है। चारों कोनों के जालों की फोटो भेजिए। फोटो लिंक के लिए 1 दबाइए। दोबारा सुनने के लिए 9 दबाइए।",
+                "prompt_text": "नमस्ते! मौसम की वजह से आपके खेत में सफेद मक्खी का खतरा बढ़ रहा है। खेत की फोटो भेजने का लिंक पाने के लिए 1 दबाइए। दोबारा सुनने के लिए 9 दबाइए।",
                 "num_digits": 1,
                 "valid_digits": ["1"],
                 "hangup": False,
@@ -167,7 +165,7 @@ def get_registered_flow_config(flow: str, step: str, farmer: Any = None,
             return {
                 "step": "result_prompt",
                 "prompt_id": "p06_result_call",
-                "prompt_text": "नमस्ते! ICAR-IISR की सलाह और फोटो जांच के अनुसार आपके खेत में 86 प्रतिशत पीले मोज़ेक का शक है, लगभग 0.4 एकड़ में। ड्रोन दीदी छिड़काव बुक करने के लिए 1 दबाइए। दोबारा सुनने के लिए 9 दबाइए।",
+                "prompt_text": "नमस्ते! आपकी फोटो की जांच हो गई है। आपके खेत के एक हिस्से में पीले मोज़ेक का शक है। ड्रोन दीदी से छिड़काव के लिए 1 दबाइए। दोबारा सुनने के लिए 9 दबाइए।",
                 "num_digits": 1,
                 "valid_digits": ["1"],
                 "hangup": False,
@@ -189,9 +187,8 @@ def get_registered_flow_config(flow: str, step: str, farmer: Any = None,
             return {
                 "step": "booking_confirmed",
                 "prompt_id": "p06_namo_didi_booked",
-                "prompt_text": f"धन्यवाद! नमो ड्रोन दीदी, {settings.didi_name}, को आपके खेत का नक्शा, बीमार हिस्सा और दवा "
-                               "की जानकारी भेज दी गई है। वे जल्द ही आपसे संपर्क करेंगी और सिर्फ बीमार हिस्से में छिड़काव करेंगी। "
-                               "इससे दवा, पानी और पैसे की बचत होगी। धन्यवाद।",
+                "prompt_text": f"धन्यवाद! नमो ड्रोन दीदी, {settings.didi_name}, को बता दिया है। वे जल्द आपको कॉल करेंगी "
+                               "और सिर्फ बीमार हिस्से में छिड़काव करेंगी। इससे दवा और पैसे बचेंगे।",
                 "num_digits": 0,
                 "valid_digits": [],
                 "hangup": True,
@@ -209,7 +206,7 @@ def get_registered_flow_config(flow: str, step: str, farmer: Any = None,
             return {
                 "step": "booking_confirmed",
                 "prompt_id": "p06_booking_confirmed",
-                "prompt_text": "धन्यवाद! ड्रोन दीदी की बुकिंग पक्की हो गई है। ड्रोन दीदी जल्द ही आपके खेत के प्रभावित हिस्से पर छिड़काव के लिए पहुंचेगी।",
+                "prompt_text": "धन्यवाद! ड्रोन दीदी की बुकिंग हो गई है। वे जल्द आपके खेत के बीमार हिस्से में छिड़काव करने आएंगी।",
                 "num_digits": 0,
                 "valid_digits": [],
                 "hangup": True,
@@ -232,7 +229,7 @@ def get_registered_flow_config(flow: str, step: str, farmer: Any = None,
             return {
                 "step": "followup_recorded",
                 "prompt_id": "p11_followup_recorded",
-                "prompt_text": "धन्यवाद! आपकी प्रतिक्रिया दर्ज कर ली गई है। फसलनेत्र से जुड़े रहने के लिए धन्यवाद।",
+                "prompt_text": "धन्यवाद! आपका जवाब मिल गया।",
                 "num_digits": 0,
                 "valid_digits": [],
                 "hangup": True,

@@ -69,6 +69,9 @@ export interface Evidence {
   advisory?: { say_hi: string; advisory_hi: string; advisory_en: string; source: "llm" | "template"; model?: string; note?: string };
 }
 
+/** The farmer's camera page link, to copy or scan on any device (GET /cases/{id}/camera-link). */
+export interface CameraLink { case_id: number; url: string; tunnel_password: string | null }
+
 export interface Case {
   id: number; field_id: string; status: string; created_at: string; target_cells: TargetCell[];
   keypad: Record<string, boolean>; trap_counts: number[]; walk_trail: [number, number][];

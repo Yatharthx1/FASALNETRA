@@ -12,14 +12,14 @@ import re
 import time
 from collections import deque
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from backend.app.core.config import settings
 from backend.app.db.session import SessionLocal
 from backend.app.models.farmer import Farmer
 from backend.app.models.ivr_session import IVRSession
 from backend.app.schemas.ivr import IVRRegisteredSimulateRequest, IVRSimulateRequest
-from backend.app.services.communications import ivr_service, tts, waapi
+from backend.app.services.communications import ivr_service, tts, waapi, waha
 from backend.app.services.communications.registered_state_machine import get_registered_flow_config
 from backend.app.api.v1.routes import ivr as ivr_routes
 
@@ -194,7 +194,7 @@ def _spawn(coro) -> None:
 @router.post("/webhook/{secret}")
 async def webhook(secret: str, request: Request) -> dict:
     """waAPI events. Answers at once (waAPI retries slow replies); the conversation runs in the background."""
-    if secret != waapi.webhook_secret():
+    if secret != waapi.webhook_secret() or not settings.whatsapp_ivr:
         raise HTTPException(404)
     payload = await request.json()
     event, data = payload.get("event"), payload.get("data") or {}
@@ -217,6 +217,12 @@ async def webhook(secret: str, request: Request) -> dict:
 @router.get("/status")
 async def status() -> dict:
     """Is the WhatsApp number linked and the webhook set? (for the demo checklist)"""
+    if settings.sms_channel == "waha":
+        try:
+            st = await asyncio.to_thread(waha.session)
+        except waha.WahaError as exc:
+            return {"channel": "waha", "error": str(exc)}
+        return {"channel": "waha", "status": st.get("status"), "me": (st.get("me") or {}).get("id")}
     if not waapi.enabled():
         return {"enabled": False}
     try:
@@ -224,12 +230,17 @@ async def status() -> dict:
     except waapi.WaapiError as exc:
         return {"enabled": True, "error": str(exc)}
     s = st.get("clientStatus", st)
-    return {"enabled": True, "instance_status": s.get("instanceStatus"), "webhook": s.get("instanceWebhook"),
-            "events": s.get("instanceEvents")}
+    return {"enabled": True, "whatsapp_ivr": settings.whatsapp_ivr, "instance_status": s.get("instanceStatus"),
+            "events": s.get("instanceEvents"), "call_policy": (s.get("instanceCallPolicy") or {}).get("mode")}
 
 
 async def configure() -> dict:
-    """Point the waAPI instance at this server: webhook for messages and calls, calls answered with the greeting."""
+    """Point the waAPI instance at this server: webhook for messages and calls, calls answered with the greeting.
+    With WHATSAPP_IVR off (default) the instance only sends links: no webhook, WhatsApp calls left alone."""
+    if not settings.whatsapp_ivr:
+        out = await asyncio.to_thread(waapi.link_only)
+        log.info("waAPI set to link-only (WhatsApp IVR off)")
+        return {"webhook_set": False, "instance_status": out.get("instanceStatus")}
     base = settings.public_base_url.rstrip("/")
     audio = await asyncio.to_thread(tts.speech, GREETING, "mp3")
     greeting_url = f"{base}/tts/{audio.name}" if audio else None
@@ -257,3 +268,27 @@ async def setup() -> dict:
         return await configure()
     except waapi.WaapiError as exc:
         raise HTTPException(502, str(exc)) from exc
+
+
+@router.get("/qr/{secret}")
+async def waha_qr(secret: str) -> Response:
+    """Link the bot's WhatsApp to WAHA: open on a laptop, scan with the bot phone (Linked devices > Link a device).
+    Shows the linked number once done. The path secret keeps strangers from linking their own phone."""
+    if secret != waapi.webhook_secret() or not waha.enabled():
+        raise HTTPException(404)
+    try:
+        s = await asyncio.to_thread(waha.session)
+        if s.get("status") == "WORKING":
+            me = s.get("me") or {}
+            return Response(f"<h1>WhatsApp linked: {me.get('id', '').split('@')[0]} {me.get('pushName', '')}</h1>",
+                            media_type="text/html")
+        if s.get("status") != "SCAN_QR_CODE":
+            return Response(f"<meta http-equiv=refresh content=3><h1>WhatsApp session: {s.get('status')}…</h1>",
+                            media_type="text/html")
+        png = await asyncio.to_thread(waha.qr_png)
+    except waha.WahaError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    import base64
+    img = base64.b64encode(png).decode()
+    return Response(f"<meta http-equiv=refresh content=15><h2>Scan with the FasalNetra bot phone</h2>"
+                    f"<img src='data:image/png;base64,{img}' width=320>", media_type="text/html")

@@ -167,6 +167,31 @@ def test_waapi_channel_sends_to_the_whatsapp_chat_id_and_reports_inner_errors(mo
     assert settings.link_channel_hi == "व्हाट्सऐप"
 
 
+def test_waha_channel_posts_send_text_with_the_api_key(monkeypatch):
+    import httpx
+
+    from backend.app.core.config import settings
+    from backend.app.services import communications
+
+    calls = []
+
+    def fake(method, url, **kw):
+        calls.append((method, url, kw))
+        if kw["json"]["chatId"].startswith("1555"):
+            return httpx.Response(422, text="not on WhatsApp", request=httpx.Request(method, url))
+        return httpx.Response(201, json={"id": {"_serialized": "true_919575500555@c.us_X"}}, request=httpx.Request(method, url))
+
+    monkeypatch.setattr(httpx, "request", fake)
+    for k, v in {"sms_provider": "waha", "waha_url": "http://waha:3000", "waha_api_key": "k"}.items():
+        monkeypatch.setattr(settings, k, v)
+    ok = communications.send_sms("+919575500555", "link")
+    method, url, kw = calls[0]
+    assert (method, url) == ("POST", "http://waha:3000/api/sendText") and kw["headers"]["X-Api-Key"] == "k"
+    assert kw["json"] == {"session": "default", "chatId": "919575500555@c.us", "text": "link"} and ok.sid.endswith("_X")
+    bad = communications.send_sms("+15550000000", "link")
+    assert bad.sid is None and "422" in bad.error
+
+
 def test_small_wide_leaf_crop_is_not_judged_blurry_by_stretching():
     """Phone crops are small and wide (e.g. 502 x 251); scoring them stretched to 512 x 512 failed sharp photos."""
     import numpy as np

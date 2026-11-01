@@ -5,8 +5,8 @@
 1. Clean slate (wipes every farmer, case, call and Didi ticket; keeps the demo parcel):
    `curl -X POST https://<host>/api/v1/demo/reset` (add `?neighbours=true` for two sample tickets in Didi's queue)
 2. Phone 2: open `https://<host>/didi` (Drone Didi). Queue is empty.
-3. Phone 1 (DEMO_FARMER_PHONE) dials the Twilio number -> rejected -> callback -> onboarding:
-   `1` Hindi, `1` soybean, `3` 30-60 days, PIN `458001`, `1` village, `1` urad/moong, `1` grassy border.
+3. Phone 1 (DEMO_FARMER_PHONE) dials the Twilio number -> answered -> onboarding in the same call:
+   `1` Hindi, `1` soybean, `3` 30-60 days, PIN `458001`, `1` village, `1` urad/moong.
 4. Call stays on (speaker). WhatsApp link arrives -> open it -> camera opens straight away (no walking) ->
    hold the high-damage leaf photo steady -> auto-capture.
 5. OpenAI vision (`VISION_PROVIDER=openai`, few-shot from `data/processed/vision/references/`) -> the call says
@@ -80,7 +80,7 @@ The demo farmer's phone is re-applied to the demo field at startup.
 | Who | Screen | What happens |
 |---|---|---|
 | Farmer phone | dials the Twilio number | call is rejected (free), callback in ~3 s |
-| New farmer phone | call | onboarding (language, crop, sowing, PIN, village, neighbour crop, grassy border); the field is mapped, Sentinel-2 walk stops picked and the SMS link sent while the call continues |
+| New farmer phone | call | onboarding (language, crop, sowing, PIN, village, neighbour crop); the field is mapped, Sentinel-2 walk stops picked and the SMS link sent while the call continues |
 | Farmer phone | call | registered farmer: symptom menu (1-4), whitefly question (1/2), then "SMS mein link aaya hai, dabaiye" |
 | Farmer phone | call (stays on) | **live hold**: keep the call on speaker; every ~6 s `/ivr/live` checks the case: "link khul gaya", "photo mil gayi, ... ka shak", "photo dhundhli hai" |
 | Farmer phone | SMS | link opens `/walk`: camera, red line to each stop (with why: satellite patch, far edge, low spot, grassy border), leaf auto-captured when sharp and steady |
@@ -94,7 +94,10 @@ triggers the same callback to `DEMO_FARMER_PHONE`.
 
 ## Trial-account notes
 
-- Calls and SMS only reach numbers verified in the Twilio console.
+- Calls and SMS only reach numbers verified in the Twilio console, and inbound calls are accepted only
+  from verified numbers (Console > Phone Numbers > Verified Caller IDs; up to 5).
+- `IVR_INBOUND_MODE=answer` (default): dialing the Twilio number runs the IVR in that same call, with no
+  reject and no callback. `callback` restores the free missed call (reject, then call back in ~3 s).
 - Trial calls play a short Twilio message first and ask to press a key before our prompt starts.
 - SMS from a non-Indian Twilio number to Indian numbers can be delayed or filtered (DLT rules).
   Test the SMS once before the demo. If it does not arrive, open the link shown on the dashboard

@@ -1,11 +1,11 @@
 from collections.abc import Generator
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from backend.app.core.config import settings
-from backend.app.db.database import PG_ARGS
+from backend.app.db.database import PG_ARGS, sqlite_pragmas
 
 # Same database as the async case engine (db/database.py), opened with the sync driver
 SYNC_DATABASE_URL = settings.db_url(sync=True)
@@ -16,8 +16,9 @@ if SYNC_DATABASE_URL.startswith("sqlite"):
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(
         SYNC_DATABASE_URL,
-        connect_args={"check_same_thread": False},
+        connect_args={"check_same_thread": False, "timeout": 30},
     )
+    event.listen(engine, "connect", sqlite_pragmas)
 else:
     engine = create_engine(SYNC_DATABASE_URL, **PG_ARGS)
 

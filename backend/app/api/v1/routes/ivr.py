@@ -20,6 +20,7 @@ from backend.app.schemas.ivr import (
     IVRStepOption,
 )
 from backend.app.services import cases
+from backend.app.services.communications import ivr_service
 from backend.app.services.communications.ivr_service import (
     REGISTERED_FIRST_STEP,
     advance_registered,
@@ -90,6 +91,30 @@ async def _advance_live(db: Session, session: IVRSession) -> tuple[str, str]:
     return kind, text
 
 
+def call_farmer_now(phone: str, db_session_maker) -> dict:
+    """Place the IVR call now: onboarding for a new number, else the registered flow (report / pending result)."""
+    clean_phone = ivr_service.clean_phone_number(phone)
+    db = db_session_maker()
+    try:
+        farmer = db.query(Farmer).filter(Farmer.phone == clean_phone).first()
+        last = db.query(IVRSession).filter(IVRSession.phone == clean_phone).first()
+        flow = inbound_flow(farmer, last)
+        initial_step = "welcome" if flow == "onboarding" else REGISTERED_FIRST_STEP[flow]
+        callback_url = (ivr_url("onboarding/start", phone=clean_phone) if flow == "onboarding"
+                        else ivr_url("registered/start", phone=clean_phone, flow=flow))
+        call_sid, error = ivr_service.place_call(clean_phone, callback_url)
+        session = last or IVRSession(call_sid=call_sid, phone=clean_phone)
+        if last is None:
+            db.add(session)
+        session.call_sid, session.flow, session.current_step = call_sid, flow, initial_step
+        session.reprompt_count, session.answers, session.status = 0, {}, "in_progress"
+        db.commit()
+        return {"phone": clean_phone, "flow": flow, "call_sid": call_sid,
+                "simulated": call_sid.startswith("mock-"), "error": error}
+    finally:
+        db.close()
+
+
 async def execute_missed_call_callback(phone: str, db_session_maker) -> None:
     """Waits a brief window and triggers the free callback to the farmer.
     If the farmer is already registered, executes their active flow (safe, warning, result, followup)
@@ -146,12 +171,29 @@ async def ivr_inbound_webhook(
     db: Session = Depends(get_db),
 ):
     """Twilio incoming voice webhook.
-    Treats inbound calls as a free 'missed call':
-    immediately rejects/hangs up so farmer is charged 0, then triggers callback within 3 seconds.
+    IVR_INBOUND_MODE=answer: the IVR runs in this same call (onboarding for a new number, else the registered flow).
+    IVR_INBOUND_MODE=callback: a free 'missed call': rejects so the farmer is charged 0, then calls back in ~3 s.
     """
     farmer_phone = (From or settings.demo_farmer_phone).strip()
     if not farmer_phone.startswith("+"):
         farmer_phone = f"+{farmer_phone}"
+
+    if settings.ivr_inbound_mode == "answer" and CallSid:
+        farmer = db.query(Farmer).filter(Farmer.phone == farmer_phone).first()
+        session = db.query(IVRSession).filter(IVRSession.phone == farmer_phone).first()
+        flow = inbound_flow(farmer, session)
+        if session is None:
+            session = IVRSession(call_sid=CallSid, phone=farmer_phone)
+            db.add(session)
+        session.call_sid, session.flow = CallSid, flow
+        session.current_step = "welcome" if flow == "onboarding" else REGISTERED_FIRST_STEP[flow]
+        session.reprompt_count, session.answers, session.status = 0, {}, "in_progress"
+        db.commit()
+        logger.info("Inbound call from %s (CallSid: %s): answering with flow %s.", farmer_phone, CallSid, flow)
+        response = VoiceResponse()
+        response.redirect(ivr_url("onboarding/start", phone=farmer_phone) if flow == "onboarding"
+                          else ivr_url("registered/start", phone=farmer_phone, flow=flow), method="POST")
+        return Response(content=str(response), media_type="application/xml")
 
     logger.info("Missed call received from %s (CallSid: %s). Rejecting for free callback.", farmer_phone, CallSid)
 
@@ -183,6 +225,19 @@ async def simulate_missed_call(
         "phone": clean_phone,
         "message": f"Missed call logged from {clean_phone}. System is calling back in 3 seconds.",
     }
+
+
+@router.post("/get-call")
+async def get_a_call(phone: str | None = Query(None, description="Farmer phone, E.164; default DEMO_FARMER_PHONE")) -> dict:
+    """Dashboard "Get a call": FasalNetra calls the farmer right away (no missed call needed).
+    simulated=true: Twilio not configured, use the dashboard keypad. error: Twilio refused the call (shown as is)."""
+    from backend.app.db.session import SessionLocal
+
+    out = await asyncio.to_thread(call_farmer_now, phone or settings.demo_farmer_phone, SessionLocal)
+    async with database.SessionLocal() as adb:
+        from backend.app.services.events import emit
+        await emit(adb, "call_placed", None, kind=out["flow"], simulated=out["simulated"], error=out["error"])
+    return out
 
 
 @router.post("/onboarding/start")
@@ -221,6 +276,7 @@ async def ivr_onboarding_start(
 
 @router.post("/onboarding/step")
 async def ivr_onboarding_step(
+    background_tasks: BackgroundTasks,
     call_sid: Optional[str] = Query(None),
     CallSid: Optional[str] = Form(None),
     Digits: Optional[str] = Form(None),
@@ -255,22 +311,22 @@ async def ivr_onboarding_step(
     session.current_step = step_result["next_step"]
     session.reprompt_count = step_result["reprompt_count"]
 
-    live = False
     if step_result["next_step"] == "completed":
         session.status = "completed"
         save_farmer_from_onboarding(db, session.phone, session.answers)
-        live = await _onboarded(session.phone, session.answers or {})
-
-    db.commit()
-
-    if live:   # same call continues: "SMS mein link aaya hai, usey dabaiye", then hold while the camera runs
+        # Field mapping, the new case and the WhatsApp/SMS send take seconds: run them after Twilio has its answer
+        # (trial webhooks time out at ~5 s) and with no database transaction held across them.
+        background_tasks.add_task(_onboarded, session.phone, dict(session.answers or {}))
+        # same call continues: "SMS mein link aaya hai, usey dabaiye", then hold while the camera runs
         _hold_for_photos(session)
+        session.answers = {**session.answers, "hold_since": cases.utcnow_iso()}   # ignore cases older than this call
         db.commit()
         twiml = generate_twiml_for_registered_step("report", "sms_dispatched", None,
                                                    ivr_url("registered/step", call_sid=session.call_sid),
                                                    reprompt_message=get_step_config("completed", {})["prompt_text"])
         return Response(content=twiml, media_type="application/xml")
 
+    db.commit()
     action_url = f"{settings.public_base_url}{settings.api_v1_prefix}/ivr/onboarding/step?call_sid={session.call_sid}"
     reprompt_msg = step_result["message"] if step_result["reprompt"] else None
     twiml = generate_twiml_for_step(session.current_step, session.answers or {}, action_url, reprompt_msg)

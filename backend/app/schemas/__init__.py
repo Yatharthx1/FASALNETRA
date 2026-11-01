@@ -175,6 +175,12 @@ class LinkOut(BaseModel):
     simulated: bool
 
 
+class CameraLinkOut(BaseModel):
+    case_id: int
+    url: str
+    tunnel_password: str | None = None   # loca.lt asks for it on a device's first visit
+
+
 class CallOut(BaseModel):
     case_id: int
     simulated: bool

@@ -41,16 +41,25 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_phone_number: str = ""
     twilio_validate_signature: bool = False
+    # Inbound call to the Twilio number: "answer" runs the IVR in that same call (works on trial accounts,
+    # the caller pays their own call); "callback" rejects it (free missed call) and FasalNetra calls back.
+    ivr_inbound_mode: str = "answer"
 
     # Link channel: "twilio" (SMS) | "whatsapp" (Twilio WhatsApp; sandbox works on trial accounts, no DLT) |
     # "waapi" (waapi.app: sends from the team's own WhatsApp number, no sandbox join, no Twilio needed) |
+    # "waha" (self-hosted WAHA, free: a team WhatsApp number linked by QR at /api/v1/wa/qr/<secret>) |
     # "aws" (AWS End User Messaging SMS) | blank = Twilio SMS when configured, else simulated.
     # AWS End User Messaging SMS needs, for India, a TRAI DLT entity + approved template and a registered sender ID;
     # a sandbox account can only text verified numbers under a $1/month cap until AWS Support lifts both.
     sms_provider: str = ""
+    waha_url: str = ""                 # "waha": self-hosted WAHA on the server's docker network, e.g. http://waha:3000
+    waha_api_key: str = ""
+    waha_session: str = "default"
     waapi_instance_id: str = ""        # "waapi": waapi.app instance (a normal WhatsApp number linked by QR)
     waapi_token: str = ""              # API token from https://waapi.app/user/api-tokens
     waapi_webhook_secret: str = ""     # path secret of /api/v1/wa/webhook/<secret>; blank = derived from the link secret
+    whatsapp_ivr: bool = False         # True: the IVR also runs in a WhatsApp chat (routes/whatsapp.py); False:
+                                       # waAPI only sends the camera link and Didi's alert, the IVR is the phone call
     whatsapp_voice_notes: bool = True  # WhatsApp IVR: each prompt also as a Hindi voice note (OpenAI TTS)
     didi_phone: str = ""               # Drone Didi's WhatsApp: gets each new booking with the /didi link
     twilio_whatsapp_from: str = "+14155238886"   # Twilio WhatsApp sandbox number; the farmer sends "join <code>" once
@@ -122,7 +131,7 @@ class Settings(BaseSettings):
     @property
     def link_channel_hi(self) -> str:
         """What the IVR calls the message the link arrives in."""
-        return "व्हाट्सऐप" if self.sms_channel in ("whatsapp", "waapi") else "SMS"
+        return "व्हाट्सऐप" if self.sms_channel in ("whatsapp", "waapi", "waha") else "SMS"
 
     @property
     def twilio_enabled(self) -> bool:

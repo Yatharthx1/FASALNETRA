@@ -83,6 +83,16 @@ def _send_waapi(to: str, body: str) -> SendResult:
         return SendResult(simulated=False, sid=None, error=str(exc))
 
 
+def _send_waha(to: str, body: str) -> SendResult:
+    from backend.app.services.communications import waha
+
+    try:
+        return SendResult(simulated=False, sid=waha.send_text(to, body))
+    except waha.WahaError as exc:   # session not linked yet, number not on WhatsApp ...
+        log.warning("WAHA WhatsApp to %s failed: %s", to, exc)
+        return SendResult(simulated=False, sid=None, error=str(exc))
+
+
 def send_sms(to: str, body: str) -> SendResult:
     channel = settings.sms_channel
     from_ = settings.twilio_phone_number
@@ -90,6 +100,8 @@ def send_sms(to: str, body: str) -> SendResult:
         return _send_aws(to, body)
     if channel == "waapi":
         return _send_waapi(to, body)
+    if channel == "waha":
+        return _send_waha(to, body)
     if channel == "whatsapp":
         # WhatsApp is not under India's DLT SMS rules; the sandbox delivers free text to numbers that joined it
         to, from_ = f"whatsapp:{to}", f"whatsapp:{settings.twilio_whatsapp_from}"

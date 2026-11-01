@@ -1,4 +1,4 @@
-import type { AppEvent, CallResult, Case, CombinedAdvisory, DidiProfile, Field, IvrPrompt, Job, Located, Risk, Scan, TrackPoint } from "../types/api";
+import type { AppEvent, CallResult, CameraLink, Case, CombinedAdvisory, DidiProfile, Field, IvrPrompt, Job, Located, Risk, Scan, TrackPoint } from "../types/api";
 
 const BASE = "/api/v1";
 
@@ -33,6 +33,9 @@ export const api = {
   getCase: (id: number) => req<Case>(`/cases/${id}`),
   caseByToken: (t: string) => req<Case>(`/cases/by-token?t=${encodeURIComponent(t)}`),
   opened: (id: number) => fetch(`${BASE}/cases/${id}/opened`, { method: "POST" }).then(() => undefined),
+  getCall: (phone: string) =>
+    post<{ phone: string; flow: string; call_sid: string; simulated: boolean; error: string | null }>(
+      `/ivr/get-call?phone=${encodeURIComponent(phone)}`),
   missedCall: (fieldId = "demo") => post<{ phone: string; callback_in_s: number }>(`/fields/${fieldId}/missed-call`),
   ivrPrompt: (phone: string) => post<IvrPrompt>("/ivr/simulate/registered", { phone }),
   warningCall: (id: number) => post<CallResult>(`/cases/${id}/warning-call`),
@@ -40,6 +43,7 @@ export const api = {
   followupCall: (id: number) => post<CallResult>(`/cases/${id}/followup-call`),
   keypad: (phone: string, digit: string) => post<IvrPrompt>("/ivr/simulate/registered", { phone, digits: digit }),
   traps: (id: number, counts: number[]) => post<Case>(`/cases/${id}/traps`, { counts }),
+  cameraLink: (id: number) => req<CameraLink>(`/cases/${id}/camera-link`),
   walk: (id: number, trail: [number, number][]) => post<Case>(`/cases/${id}/walk`, { trail }),
   track: (id: number, points: TrackPoint[]) => post<{ stored: number; total: number }>(`/cases/${id}/track`, { points }),
   locate: (id: number, at: { lat: number; lon: number; accuracy: number }) => post<Located>(`/cases/${id}/locate`, at),

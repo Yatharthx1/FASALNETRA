@@ -4,7 +4,7 @@ from collections import Counter
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import settings
@@ -168,16 +168,22 @@ async def open_case_for_phone(db: AsyncSession, phone: str) -> Case | None:
 
 
 OPEN_STATUSES = ("warned", "link_sent", "collecting")   # case still waiting for photos
+SUPERSEDED = "superseded"   # a newer call started a fresh camera session; this case's link no longer opens
+
+
+async def _retire_open_cases(db: AsyncSession, field_id: str) -> None:
+    """A new call means a new camera session: older cases still waiting for photos stop accepting their link."""
+    await db.execute(update(Case).where(Case.field_id == field_id, Case.status.in_(OPEN_STATUSES))
+                     .values(status=SUPERSEDED))
+    await db.commit()
 
 
 async def _case_for_report(db: AsyncSession, phone: str) -> Case | None:
-    """Farmer called in about a problem: reuse a case still waiting for photos, else open a new one."""
-    latest = await open_case_for_phone(db, phone)
-    if latest is not None and latest.status in OPEN_STATUSES:
-        return latest
+    """Farmer called in about a problem: every call opens a fresh case, so a fresh camera link and session."""
     field = (await db.execute(select(Field).join(FieldOwner).where(FieldOwner.phone == phone))).scalars().first()
     if field is None:   # registered by phone but no mapped field yet
         return None
+    await _retire_open_cases(db, field.id)
     case = await create(db, field.id)
     await emit(db, "farmer_reported", case.id, phone=phone)
     return case
@@ -217,7 +223,8 @@ async def on_ivr_action(db: AsyncSession, phone: str, step: str, digit: str | No
 async def send_link(db: AsyncSession, case: Case) -> tuple[str, communications.SendResult]:
     url = communications.walk_link(case.id)
     body = f"FasalNetra: {case.field.farmer.name}, kheth ki photo ke liye yeh link kholiye: {url}"
-    sent = communications.send_sms(case.field.farmer.phone, body)
+    # a network call (Twilio / waAPI): off the event loop, so no other request (or Twilio webhook) waits on it
+    sent = await asyncio.to_thread(communications.send_sms, case.field.farmer.phone, body)
     case.status = "link_sent"
     await db.commit()
     if sent.error:   # link still shown on the dashboard ("Open walk page") so the walk can go on
@@ -430,6 +437,13 @@ def _utcnow_naive() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def utcnow_iso() -> str:
+    return _utcnow_naive().isoformat()
+
+
+CASE_WAIT_TICKS = 6   # onboarding hold: ~40 s for the background job to open the case before giving up
+
+
 def live_holding(phone: str) -> bool:
     """Is a call to this phone holding on the line right now (link sent, waiting for photos)?"""
     db = IvrSessionLocal()
@@ -465,6 +479,11 @@ async def live_tick(db: AsyncSession, phone: str, state: dict) -> tuple[str, str
     kind is "wait" (say it, pause, check again), "result" (evidence ready: play the result prompt) or "end"."""
     state = {**state, "live_ticks": state.get("live_ticks", 0) + 1}
     case = await open_case_for_phone(db, phone)
+    since = state.get("hold_since")   # onboarding: the case is opened in the background, never reuse an older one
+    if since and (case is None or case.created_at.replace(tzinfo=None) < datetime.fromisoformat(since)):
+        case = None
+        if state["live_ticks"] < CASE_WAIT_TICKS:
+            return "wait", "", state
     if case is None:
         return "end", "धन्यवाद। फोटो मिलने पर हम आपको कॉल करेंगे।", state
     if case.evidence:

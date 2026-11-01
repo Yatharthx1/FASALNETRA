@@ -62,15 +62,9 @@ def test_state_machine_happy_path():
 
     # 6. Neighbor Crop -> Urad/Moong (1)
     res = process_step_input("neighbor_crop", "1", answers)
-    assert res["next_step"] == "grass_border"
+    assert res["next_step"] == "completed"   # no grassy-border question any more
     answers = res["updated_answers"]
     assert answers["neighbor_crop"] == "urad_moong"
-
-    # 7. Grass on Border -> Haan (1)
-    res = process_step_input("grass_border", "1", answers)
-    assert res["next_step"] == "completed"
-    answers = res["updated_answers"]
-    assert answers["grass_border"] == "yes"
 
 
 def test_repeat_prompt_digit_9():
@@ -131,11 +125,7 @@ def test_simulate_step_api_full_journey():
         r = client.post("/api/v1/ivr/simulate/step", json={"phone": phone, "digits": "1"})
         assert r.json()["current_step"] == "neighbor_crop"
 
-        # Step 6: Neighbor crop -> 1 (Urad/Moong)
-        r = client.post("/api/v1/ivr/simulate/step", json={"phone": phone, "digits": "1"})
-        assert r.json()["current_step"] == "grass_border"
-
-        # Step 7: Grass border -> 1 (Haan)
+        # Step 6: Neighbor crop -> 1 (Urad/Moong): the last question
         r = client.post("/api/v1/ivr/simulate/step", json={"phone": phone, "digits": "1"})
         data = r.json()
         assert data["current_step"] == "completed"
@@ -148,12 +138,33 @@ def test_simulate_step_api_full_journey():
         assert farmer.status == "registered"
         assert farmer.crop == "soybean"
         assert farmer.sowing_date_bracket == "30_60"
-        assert farmer.grassy_border == "yes"
+        assert farmer.grassy_border is None   # not asked any more
         db.close()
 
 
-def test_twilio_twiml_webhook_flow():
+def test_inbound_call_answered_in_same_call(monkeypatch):
+    """IVR_INBOUND_MODE=answer (trial accounts): the inbound call itself runs onboarding, no reject or callback."""
+    monkeypatch.setattr(settings, "ivr_inbound_mode", "answer")
+    with TestClient(app) as client:
+        r = client.post("/api/v1/ivr/webhook", data={"From": "+919876543210", "CallSid": "CA-inbound-1"})
+        assert r.status_code == 200
+        assert "<Reject" not in r.text
+        assert "/ivr/onboarding/start" in r.text
+
+        r = client.post("/api/v1/ivr/onboarding/start?phone=%2B919876543210",
+                        data={"From": "+919876543210", "CallSid": "CA-inbound-1"})
+        assert "<Gather" in r.text
+        assert "call_sid=CA-inbound-1" in r.text
+
+    db = SessionLocal()
+    session = db.query(IVRSession).filter(IVRSession.phone == "+919876543210").first()
+    assert (session.call_sid, session.flow, session.current_step) == ("CA-inbound-1", "onboarding", "welcome")
+    db.close()
+
+
+def test_twilio_twiml_webhook_flow(monkeypatch):
     """Test inbound webhook for missed-call rejection and callback TwiML generation."""
+    monkeypatch.setattr(settings, "ivr_inbound_mode", "callback")
     with TestClient(app) as client:
         # Inbound call -> immediate reject (missed call flow)
         r = client.post(

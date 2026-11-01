@@ -24,7 +24,8 @@ async def chat(monkeypatch):
     monkeypatch.setattr(waapi, "send_voice", lambda phone, ogg: sent.append((phone, "<voice>")) or "id")
     monkeypatch.setattr(tts, "speech", lambda text, fmt="opus": None)
     monkeypatch.setattr(whatsapp, "LIVE_TICK_S", 0.5)
-    for k, v in {"waapi_instance_id": "7", "waapi_token": "t", "sms_provider": "waapi", "didi_phone": DIDI}.items():
+    for k, v in {"waapi_instance_id": "7", "waapi_token": "t", "sms_provider": "waapi", "didi_phone": DIDI,
+                 "whatsapp_ivr": True}.items():
         monkeypatch.setattr(settings, k, v)
     yield sent
     for task in whatsapp._live.values():   # a live hold must not outlive its test database
@@ -67,7 +68,7 @@ async def test_whatsapp_call_runs_the_whole_ivr_in_the_chat(client, chat):
     await _hook(client, "call", {"call": {"from": CHAT, "fromMe": False}})      # same call, another event: ignored
 
     assert "भेजिए" in (await _reply(client, chat, "1"))                          # chat wording, not "press"
-    for answer in ["1", "3", "458001", "1", "1"]:
+    for answer in ["1", "3", "458001", "1"]:
         await _reply(client, chat, answer)
     done = await _reply(client, chat, "1")
     assert "/walk?t=" in done and "यह चैट खुली रखिए" in done                     # link + hold, same chat
@@ -85,7 +86,7 @@ async def test_whatsapp_call_runs_the_whole_ivr_in_the_chat(client, chat):
     assert "समस्या का स्तर" in result and "बातचीत खत्म करने के लिए 3" in result
 
     advice = await _reply(client, chat, "2")
-    assert "प्रति एकड़" in advice
+    assert "दुकान से" in advice and "%" not in advice
     before = len(chat)
     await _reply(client, chat, "1")
     jobs = (await client.get(f"{API}/didi/jobs")).json()
@@ -101,3 +102,13 @@ async def test_webhook_rejects_a_wrong_secret_and_ignores_own_messages(client, c
         "message": {"id": {"_serialized": "own"}, "from": CHAT, "fromMe": True, "type": "chat", "body": "1"}}})
     await asyncio.sleep(0.3)
     assert chat == []
+
+
+async def test_with_the_whatsapp_ivr_off_the_webhook_is_closed(client, chat, monkeypatch):
+    from backend.app.core.config import settings
+    from backend.app.services.communications import waapi
+
+    monkeypatch.setattr(settings, "whatsapp_ivr", False)
+    r = await client.post(f"{API}/wa/webhook/{waapi.webhook_secret()}", json={"event": "call", "instanceId": "7",
+                                                                            "data": {"call": {"from": CHAT}}})
+    assert r.status_code == 404 and chat == []

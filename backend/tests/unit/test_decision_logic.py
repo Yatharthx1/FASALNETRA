@@ -92,8 +92,8 @@ def _ctx(action, spray=None):
 def test_result_call_speaks_case_cause_zone_and_dose():
     cfg = get_registered_flow_config("result", "result_prompt",
                                      context=_ctx("advise_spray", {"quantity": 52.0, "unit": "ml"}))
-    assert "72 प्रतिशत पीला मोज़ेक का शक" in cfg["prompt_text"]
-    assert "0.4 एकड़" in cfg["prompt_text"] and "52 ml" in cfg["prompt_text"]
+    assert "पीला मोज़ेक का शक" in cfg["prompt_text"] and "प्रतिशत" not in cfg["prompt_text"]
+    assert "एकड़" not in cfg["prompt_text"] and "ml" not in cfg["prompt_text"]   # numbers only in the advice (key 2)
     assert cfg["valid_digits"] == ["1"] and not cfg["hangup"]
 
 
@@ -103,7 +103,7 @@ def test_result_call_without_pesticide_offers_no_booking():
 
 
 def test_result_call_falls_back_to_demo_script_without_a_case():
-    assert "86 प्रतिशत" in get_registered_flow_config("result", "result_prompt")["prompt_text"]
+    assert "पीले मोज़ेक का शक" in get_registered_flow_config("result", "result_prompt")["prompt_text"]
 
 
 # --- links ----------------------------------------------------------------
@@ -196,4 +196,4 @@ def test_high_problem_offers_the_three_way_menu_before_any_advice():
     cfg = get_registered_flow_config("result", "result_prompt", None, ctx)
     assert cfg["valid_digits"] == ["1", "2", "3"] and "ज़्यादा" in cfg["prompt_text"]
     assert "50.6 ml" not in cfg["prompt_text"]          # the dose comes only after key 2
-    assert "50.6 ml प्रति एकड़" in get_registered_flow_config("result", "self_advice", None, ctx)["prompt_text"]
+    assert "20 ml" in get_registered_flow_config("result", "self_advice", None, ctx)["prompt_text"]   # one amount: for the sick patch

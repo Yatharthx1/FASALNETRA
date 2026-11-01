@@ -84,3 +84,8 @@ def configure(webhook_url: str, greeting_url: str | None, events: list[str]) -> 
     policy = ({"mode": "answer_and_play", "audio_url": greeting_url, "hangup_after_seconds": 20} if greeting_url
               else {"mode": "reject_with_message", "message": "नमस्ते! फसलनेत्र आपसे इसी चैट में बात करेगा।"})
     return _call("PUT", "", {"webhook": {"url": webhook_url, "events": events}, "call_policy": policy})
+
+
+def link_only() -> dict:
+    """Sending only: no webhook events and WhatsApp calls to the number are left alone (the IVR is the phone call)."""
+    return _call("PUT", "", {"webhook": {"url": None, "events": []}, "call_policy": None})

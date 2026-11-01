@@ -285,3 +285,17 @@ ul.plain { margin: 0; padding-left: 1.1em; }
 .savings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--s-100); }
 .saving { display: flex; flex-direction: column; gap: 2px; padding: var(--s-100); border-radius: 12px;
   background: var(--leaf-100); color: var(--leaf-800); }
+
+/* Dashboard: "Get a call" and the copiable farmer link */
+.get-call { display: flex; gap: var(--s-75); align-items: center; }
+.get-call input, .link-popup input { min-width: 0; padding: 8px 10px; border: 1px solid var(--grey-300, #ccc); border-radius: 8px;
+  font: inherit; background: var(--surface, #fff); color: inherit; }
+.get-call input { width: 160px; }
+.dash-call-status { grid-column: 1 / -1; margin: 0; }
+.link-popup { position: fixed; right: 16px; bottom: 16px; z-index: 1000; width: min(420px, calc(100vw - 32px));
+  gap: var(--s-75); display: flex; flex-direction: column; padding: var(--s-100); box-shadow: 0 8px 28px rgba(0,0,0,.18); }
+.link-popup input { flex: 1; font-size: 12px; }
+.link-popup-body { display: flex; gap: var(--s-100); align-items: center; }
+.link-popup-body p { margin: 0; }
+.link-qr { width: 132px; height: 132px; flex-shrink: 0; border-radius: 6px; }
+.get-call .btn { white-space: nowrap; }

@@ -6,7 +6,7 @@ from backend.tests.conftest import jpeg, needs_data
 
 API = "/api/v1"
 PHONE = "+919000000001"
-ONBOARD = ["1", "1", "3", "458001", "1", "1", "1"]   # Hindi, soybean, 30-60 days, PIN, village, urad/moong, grassy
+ONBOARD = ["1", "1", "3", "458001", "1", "1"]   # Hindi, soybean, 30-60 days, PIN, village, urad/moong
 pytestmark = [pytest.mark.asyncio, needs_data]
 
 
@@ -101,7 +101,35 @@ async def test_key_2_speaks_the_table_dose_then_key_3_ends_the_call(client):
 
     advice = (await client.post(f"{API}/ivr/simulate/registered", json={"phone": PHONE, "digits": "2"})).json()
     assert advice["current_step"] == "self_advice" and "Thiamethoxam" in advice["prompt_text"]
-    assert "प्रति एकड़" in advice["prompt_text"] and advice["valid_digits"] == ["1", "3"]
+    assert "दुकान से" in advice["prompt_text"] and "%" not in advice["prompt_text"] and advice["valid_digits"] == ["1", "3"]
     bye = (await client.post(f"{API}/ivr/simulate/registered", json={"phone": PHONE, "digits": "3"})).json()
     assert bye["current_step"] == "goodbye" and bye["is_completed"]
     assert not await _events(client, "didi_booked")
+
+
+async def test_get_a_call_starts_onboarding_now_and_reports_a_twilio_refusal(client, monkeypatch):
+    from backend.app.services.communications import ivr_service
+
+    r = (await client.post(f"{API}/ivr/get-call", params={"phone": "+919000000077"})).json()
+    assert r["flow"] == "onboarding" and r["simulated"] and r["error"] is None
+    session = (await client.get(f"{API}/ivr/session/+919000000077")).json()["session"]
+    assert session["flow"] == "onboarding" and session["current_step"] == "welcome"
+
+    monkeypatch.setattr(ivr_service, "place_call", lambda phone, url: ("mock-call-0077", "unverified number"))
+    r = (await client.post(f"{API}/ivr/get-call", params={"phone": "+919000000077"})).json()
+    assert r["error"] == "unverified number"
+    assert any(e["type"] == "call_placed" and e["payload"]["error"] for e in await _events(client, "call_placed"))
+
+
+async def test_twilio_onboarding_answers_at_once_then_opens_the_case_and_holds(client):
+    sid = "CA-onboard-twilio"
+    await client.post(f"{API}/ivr/simulate/step", json={"phone": PHONE, "reset": True})
+    await client.post(f"{API}/ivr/onboarding/start", params={"phone": PHONE}, data={"CallSid": sid})
+    for d in ONBOARD:
+        last = await client.post(f"{API}/ivr/onboarding/step", params={"call_sid": sid}, data={"Digits": d})
+    assert last.status_code == 200 and "<Hangup" not in last.text and "/ivr/live" in last.text   # straight to the hold
+
+    sent = await _events(client, "sms_sent")   # the background job mapped the field, opened the case, sent the link
+    assert sent and "/walk?t=" in sent[0]["payload"]["url"]
+    held = await client.post(f"{API}/ivr/live", params={"call_sid": sid})
+    assert "<Hangup" not in held.text and "/ivr/live" in held.text

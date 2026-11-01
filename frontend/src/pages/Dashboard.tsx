@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
-import { ExternalLink, Phone, PhoneCall, PhoneIncoming, Plus, RotateCcw, Volume2, ShieldAlert, Sprout } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import qrcode from "qrcode-generator";
+import { Camera, Check, Copy, ExternalLink, Phone, PhoneCall, PhoneIncoming, Plus, RotateCcw, Volume2, ShieldAlert, Sprout, X } from "lucide-react";
 import EvidenceCard from "../components/EvidenceCard";
 import FieldMap from "../components/FieldMap";
 import { ErrorNotice, Skeleton, useAsync } from "../components/common";
 import { api, eventsSocket } from "../lib/api";
 import { causeName, fmt, speak, t, type Lang } from "../lib/i18n";
-import type { AppEvent, Case, IvrPrompt } from "../types/api";
+import type { AppEvent, CameraLink, Case, IvrPrompt } from "../types/api";
 
 const LANG: Lang = "en";   // dashboard is for judges; farmer and Didi screens are Hindi
 const DEMO_TRAPS = [3, 12, 5, 2];
@@ -16,7 +17,8 @@ function eventLine(e: AppEvent): string {
   const p = e.payload as Record<string, unknown>;
   switch (e.type) {
     case "case_created": return `Case #${e.case_id}: satellite flagged ${p.flagged_acres} acre (scene ${p.scene})`;
-    case "call_placed": return `${p.kind === "result" ? "Result" : p.kind === "followup" ? "Day +5 follow-up" : "Warning"} call ${p.simulated ? "(simulated)" : "placed"}`;
+    case "call_placed": return p.error ? `Call failed: ${String(p.error).slice(0, 120)}`
+      : `${p.kind === "result" ? "Result" : p.kind === "followup" ? "Day +5 follow-up" : p.kind === "onboarding" ? "Onboarding" : p.kind === "report" ? "Report-a-problem" : "Warning"} call ${p.simulated ? "(simulated)" : "placed"}`;
     case "key_pressed": return `Farmer pressed ${p.digit} on ${p.step}`;
     case "answer_saved": return `Answer saved: ${Object.entries(p.answers as object).map(([k, v]) => `${k}=${v ? "yes" : "no"}`).join(", ")}`;
     case "sms_failed": return "SMS failed (link below: open it on the phone)";
@@ -46,7 +48,11 @@ export default function Dashboard() {
   const [events, setEvents] = useState<AppEvent[]>([]);
   const [prompt, setPrompt] = useState<IvrPrompt | null>(null);
   const [link, setLink] = useState<string | null>(null);
+  const [camLink, setCamLink] = useState<CameraLink | null>(null);   // the popup: public link to copy or scan
   const [error, setError] = useState<string | null>(null);
+  // farmer phone for "Get a call", remembered on this laptop between reloads
+  const [callTo, setCallTo] = useState(() => { try { return localStorage.getItem("fn.callTo") ?? ""; } catch { return ""; } });
+  const [calling, setCalling] = useState<{ tone: "ok" | "warn" | "error"; text: string } | null>(null);
 
   const refreshCase = useCallback(async (id: number) => setKase(await api.getCase(id)), []);
 
@@ -65,12 +71,17 @@ export default function Dashboard() {
     return () => clearInterval(id);
   }, [holding]);
 
-  const takeLink = useCallback((e: AppEvent) => {
+  const openCamLink = useCallback((caseId: number) => {
+    api.cameraLink(caseId).then(setCamLink).catch((e: Error) => setError(e.message));
+  }, []);
+
+  const takeLink = useCallback((e: AppEvent, popup = true) => {
     if ((e.type === "sms_sent" || e.type === "sms_failed") && typeof e.payload.url === "string") {
       const u = new URL(e.payload.url);
       setLink(`${location.origin}${u.pathname}${u.search}`);   // same origin as the dashboard (proxy)
+      if (popup && e.case_id) openCamLink(e.case_id);
     }
-  }, []);
+  }, [openCamLink]);
 
   useEffect(() => {
     // After a page reload, pick up the latest case and its link from the event log.
@@ -79,17 +90,17 @@ export default function Dashboard() {
       const last = [...list].reverse().find((e) => e.type === "case_created");
       if (last?.case_id) {
         refreshCase(last.case_id).catch(() => undefined);
-        list.filter((e) => e.case_id === last.case_id).forEach(takeLink);
+        list.filter((e) => e.case_id === last.case_id).forEach((e) => takeLink(e, false));
       }
     }).catch(() => undefined);
     return eventsSocket((e) => {
       setEvents((list) => [...list.slice(-199), e]);
       takeLink(e);
-      if (e.type === "case_created" && e.case_id) { refreshCase(e.case_id).catch(() => undefined); setLink(null); }
+      if (e.type === "case_created" && e.case_id) { refreshCase(e.case_id).catch(() => undefined); setLink(null); setCamLink(null); }
       if (e.case_id && ["photo_received", "zone_mapped", "evidence_ready", "didi_booked", "traps_counted"].includes(e.type)) {
         refreshCase(e.case_id).catch(() => undefined);
       }
-      if (e.type === "demo_reset") { setKase(null); setPrompt(null); setLink(null); setEvents([e]); }
+      if (e.type === "demo_reset") { setKase(null); setPrompt(null); setLink(null); setCamLink(null); setEvents([e]); }
     });
   }, [refreshCase, takeLink]);
 
@@ -103,6 +114,21 @@ export default function Dashboard() {
     setPrompt(next);
     speak(next.prompt_text);
   });
+
+  async function getCall() {
+    const phone = callTo.replace(/[\s-]/g, "");
+    if (!phone) return;
+    try { localStorage.setItem("fn.callTo", phone); } catch { /* private window: just not remembered */ }
+    setCalling({ tone: "warn", text: `Calling ${phone}…` });
+    try {
+      const r = await api.getCall(phone);
+      setCalling(r.error ? { tone: "error", text: `Twilio refused the call: ${r.error}` }
+        : r.simulated ? { tone: "warn", text: "Twilio is not configured: call simulated" }
+          : { tone: "ok", text: `Ringing ${r.phone} (${r.flow})` });
+    } catch (e) {
+      setCalling({ tone: "error", text: (e as Error).message });
+    }
+  }
 
   const today = riskQ.data?.days[0];
   const field = fieldQ.data;
@@ -137,11 +163,24 @@ export default function Dashboard() {
           </figure>
         )}
         <span style={{ flex: 1 }} />
+        <form className="get-call" onSubmit={(e) => { e.preventDefault(); void getCall(); }}>
+          <label htmlFor="call-to" className="sr-only">Farmer phone</label>
+          <input id="call-to" className="num" type="tel" inputMode="tel" placeholder="+91 farmer phone" required
+            value={callTo} onChange={(e) => setCallTo(e.target.value)} />
+          <button type="submit" className="btn btn-primary"><PhoneCall size={16} aria-hidden="true" /> Get a call</button>
+        </form>
+        <button type="button" className="btn" disabled={!kase} title={kase ? undefined : "Start a case first"}
+          onClick={() => kase && openCamLink(kase.id)}>
+          <Camera size={16} aria-hidden="true" /> Camera link
+        </button>
         <a className="btn" href="/didi" target="_blank" rel="noreferrer">Drone Didi <ExternalLink size={16} aria-hidden="true" /></a>
         <button type="button" className="btn" onClick={() => run(async () => { await api.reset(); })}>
           <RotateCcw size={16} aria-hidden="true" /> {t("dash.reset", {}, LANG)}
         </button>
       </header>
+
+      {calling && <p className={`notice notice-${calling.tone} body-6 dash-call-status`} role="status">{calling.text}</p>}
+      {camLink && <LinkPopup link={camLink} onClose={() => setCamLink(null)} />}
 
       <section className="dash-map" aria-label="Field map">
         {field ? (
@@ -310,5 +349,70 @@ export default function Dashboard() {
         </section>
       </aside>
     </main>
+  );
+}
+
+/** QR code of the link as plain SVG squares: scan it with the farmer's phone camera to open the page. */
+function QrCode({ text }: { text: string }) {
+  const qr = useMemo(() => { const q = qrcode(0, "M"); q.addData(text); q.make(); return q; }, [text]);
+  const n = qr.getModuleCount();
+  const cells: string[] = [];
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) cells.push(`M${c} ${r}h1v1h-1z`);
+  return (
+    <svg className="link-qr" viewBox={`-2 -2 ${n + 4} ${n + 4}`} role="img" aria-label="QR code of the camera link" shapeRendering="crispEdges">
+      <rect x="-2" y="-2" width={n + 4} height={n + 4} fill="#fff" />
+      <path d={cells.join("")} fill="#000" />
+    </svg>
+  );
+}
+
+/** The farmer's camera page link: copy it, scan it, or open it on any device (phone, tablet, second laptop). */
+function LinkPopup({ link, onClose }: { link: CameraLink; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const local = /\/\/(localhost|127\.0\.0\.1)[:/]/.test(link.url);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link.url);
+    } catch {   // http or blocked clipboard: select the text so Ctrl+C works
+      const el = document.getElementById("farmer-link") as HTMLInputElement | null;
+      el?.select();
+      document.execCommand?.("copy");
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <aside className="link-popup panel" role="dialog" aria-labelledby="link-popup-title">
+      <div className="row spread">
+        <span id="link-popup-title" className="title-3">Farmer camera link</span>
+        <button type="button" className="btn btn-icon" aria-label="Close" onClick={onClose}><X size={14} /></button>
+      </div>
+      <div className="link-popup-body">
+        <QrCode text={link.url} />
+        <p className="body-6 muted">Scan with the phone camera, or copy and send it on WhatsApp. It opens the leaf camera for this case.</p>
+      </div>
+      <div className="row" style={{ gap: "var(--s-75)", flexWrap: "nowrap" }}>
+        <label htmlFor="farmer-link" className="sr-only">Camera link</label>
+        <input id="farmer-link" className="num" readOnly value={link.url} onFocus={(e) => e.target.select()} />
+        <button type="button" className="btn btn-primary" onClick={() => void copy()}>
+          {copied ? <><Check size={14} aria-hidden="true" /> Copied</> : <><Copy size={14} aria-hidden="true" /> Copy</>}
+        </button>
+        <a className="btn btn-icon" href={link.url} target="_blank" rel="noreferrer" aria-label="Open link"><ExternalLink size={14} /></a>
+      </div>
+      <p role="status" className="sr-only">{copied ? "Link copied" : ""}</p>
+      {link.tunnel_password && (
+        <p className="notice notice-warn body-6">
+          First time on a device, the page asks for a tunnel password. Enter <strong className="num">{link.tunnel_password}</strong>.
+        </p>
+      )}
+      {local && (
+        <p className="notice notice-warn body-6">This is a localhost link, so it only works on this laptop. Set PUBLIC_BASE_URL to the tunnel URL.</p>
+      )}
+    </aside>
   );
 }

@@ -158,6 +158,22 @@ def generate_twiml_say_hangup(text: str) -> str:
     return str(response)
 
 
+def place_call(phone: str, callback_webhook_url: str) -> tuple[str, str | None]:
+    """Outbound call: (call sid, None), or (mock sid, Twilio's error) so the caller can show why it failed."""
+    if not (settings.twilio_account_sid and settings.twilio_auth_token
+            and not settings.twilio_account_sid.startswith("ACxxxx")):
+        return f"mock-call-{phone[-4:] if len(phone) >= 4 else '0000'}", None
+    try:
+        call = Client(settings.twilio_account_sid, settings.twilio_auth_token).calls.create(
+            to=phone, from_=settings.twilio_phone_number, url=callback_webhook_url,
+            status_callback=ivr_url("status"), status_callback_event=["completed"])
+    except Exception as e:  # noqa: BLE001 -- unverified number, no credit, number released ...
+        logger.error("Failed to initiate Twilio call: %s", e)
+        return f"mock-call-{phone[-4:] if len(phone) >= 4 else '0000'}", str(e)
+    logger.info("Twilio outbound call initiated: %s to %s", call.sid, phone)
+    return call.sid, None
+
+
 def trigger_outbound_call(phone: str, callback_webhook_url: str) -> str:
     """Triggers outbound phone call via Twilio or returns mock CallSid in dev/demo mode."""
     if (
@@ -200,7 +216,7 @@ def save_farmer_from_onboarding(db, phone: str, answers: dict[str, Any]) -> Farm
     farmer.village = answers.get("village", "दलोदा (Daloda)")
     farmer.corner_landmark = answers.get("landmark", None)
     farmer.neighbor_crop = answers.get("neighbor_crop", "urad_moong")
-    farmer.grassy_border = answers.get("grass_border", "yes")
+    farmer.grassy_border = answers.get("grass_border")   # no longer asked on the call
     farmer.status = "registered"
 
     db.commit()

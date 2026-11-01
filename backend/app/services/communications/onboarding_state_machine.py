@@ -15,7 +15,6 @@ STEPS = [
     "pincode",
     "village",
     "neighbor_crop",
-    "grass_border",
     "completed",
 ]
 
@@ -41,10 +40,6 @@ CHOICE_MAP: dict[str, dict[str, str]] = {
         "1": "urad_moong",
         "2": "soybean",
         "3": "other",
-    },
-    "grass_border": {
-        "1": "yes",
-        "2": "no",
     },
 }
 
@@ -137,24 +132,11 @@ def get_step_config(step: str, answers: dict[str, Any]) -> dict[str, Any]:
             ],
         }
 
-    elif step == "grass_border":
-        return {
-            "step": "grass_border",
-            "prompt_id": "onboarding_08_grass",
-            "prompt_text": "क्या खेत की मेड़ पर घास या खरपतवार है? हां के लिए 1, नहीं के लिए 2 दबाएं। दोबारा सुनने के लिए 9 दबाएं।",
-            "num_digits": 1,
-            "valid_digits": ["1", "2"],
-            "options": [
-                {"digit": "1", "label": "हां (Yes)"},
-                {"digit": "2", "label": "नहीं (No)"},
-            ],
-        }
-
     elif step == "completed":
         return {
             "step": "completed",
             "prompt_id": "onboarding_09_completed",
-            "prompt_text": "धन्यवाद! आपका पंजीकरण पूरा हो गया है। सैटेलाइट से आपके खेत के वे हिस्से ढूंढ लिए हैं जहां फसल कमज़ोर दिख रही है।",
+            "prompt_text": "धन्यवाद! आपका पंजीकरण हो गया है।",
             "num_digits": 0,
             "valid_digits": [],
             "options": [],
