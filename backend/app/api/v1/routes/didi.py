@@ -18,7 +18,7 @@ TRANSITIONS = {
     "verified": ({"accepted"}, "accepted"),      # verify_then_spray: Didi saw the damage herself
     "rejected": ({"accepted"}, "done"),          # verify_then_spray: nothing to spray
     "start": ({"accepted"}, "flying"),
-    "complete": ({"flying"}, "done"),
+    "complete": ({"accepted", "flying"}, "done"),
 }
 URGENCY = {"spray": 0, "verify_then_spray": 1}
 

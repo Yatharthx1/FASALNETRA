@@ -89,7 +89,8 @@ export interface Job {
     acres_not_sprayed: number; full_field_minutes: number;
   };
   ticket: {
-    farmer: string; village: string; khasra: string; crop_days: number; field: Polygon; field_acres: number;
+    farmer: string; village: string; khasra: string; phone?: string; crop_days: number; field: Polygon; field_acres: number;
+    zone?: Geometry | null; zone_acres?: number; walk_trail?: [number, number][];
     cause: Cause; confidence: number; level: "high" | "medium" | "low" | null; symptoms: string[]; distance_km: number;
   };
   created_at: string; updated_at: string;

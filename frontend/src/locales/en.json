@@ -189,5 +189,15 @@
   "walk.where.near_field": "Your field is {m} m away",
   "walk.where.away": "You are {km} km from your field. Open the link at the field.",
   "result.advisory_llm": "Advice written by AI from ICAR facts; dose from the ICAR table",
-  "result.advisory_template": "Advice from the ICAR table and crop stage"
+  "result.advisory_template": "Advice from the ICAR table and crop stage",
+  "didi.tabs.pending": "Pending Tickets",
+  "didi.tabs.closed": "Closed Tickets",
+  "didi.call": "Call Farmer",
+  "didi.mark_done": "Mark as Completed",
+  "didi.legend_field": "Farmer's Field",
+  "didi.legend_patch": "Affected Patch (From Farmer's Web Walk)",
+  "didi.legend_trail": "Farmer's Walk Trail",
+  "didi.patch_of_field": "{zone} acre affected of {field} acre field",
+  "didi.no_pending": "No pending tickets right now.",
+  "didi.no_closed": "No closed tickets yet."
 }

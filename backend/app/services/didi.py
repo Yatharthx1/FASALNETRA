@@ -117,7 +117,11 @@ def ticket(job: DidiJob) -> dict:
         geo.to_m({"type": "Point", "coordinates": [f.centroid_lon, f.centroid_lat]})) / 1000
     return {
         "farmer": f.farmer.name, "village": f.farmer.village, "khasra": f.khasra,
+        "phone": getattr(f.farmer, "phone", ""),
         "crop_days": (fields.today() - f.sowing_date).days, "field": f.geometry, "field_acres": f.area_acres,
+        "zone": case.zone or job.route.get("zone"),
+        "zone_acres": case.zone_acres or job.plan.get("zone_acres"),
+        "walk_trail": case.walk_trail or [],
         "cause": ev.get("cause"), "confidence": ev.get("confidence"), "level": ev.get("level"),
         "symptoms": row.get("symptoms_hi") or row.get("symptoms", []), "symptoms_en": row.get("symptoms", []),
         "name_en": row.get("name_en"), "name_hi": row.get("name_hi"),

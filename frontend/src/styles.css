@@ -264,3 +264,19 @@ ul.plain { margin: 0; padding-left: 1.1em; }
   .ticket-grid .where { grid-row: auto; }
   .save-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Segmented Tabs & Map Graphic for Didi */
+.didi-tabs { display: flex; gap: var(--s-100); border-bottom: 2px solid var(--line); padding-bottom: var(--s-100); margin-bottom: var(--s-100); }
+.didi-tab-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: var(--s-100); padding: var(--s-150) var(--s-200); border-radius: var(--r-lg); font-size: 16px; font-weight: 600; cursor: pointer; border: 2px solid transparent; background: var(--surface); color: var(--muted); transition: all 150ms ease; }
+.didi-tab-btn:hover { background: var(--paper); color: var(--ink); }
+.didi-tab-btn.active { background: var(--leaf-600); color: #FFFDF8; border-color: var(--leaf-700); }
+.didi-tab-btn .badge { background: rgba(255, 255, 255, 0.25); color: inherit; padding: 2px 8px; border-radius: 999px; font-size: 14px; font-weight: 700; }
+.didi-tab-btn:not(.active) .badge { background: var(--line); color: var(--ink); }
+
+.didi-map-graphic { height: 420px; border-radius: var(--r-xl); overflow: hidden; border: 2px solid var(--line); position: relative; }
+.map-legend-bar { display: flex; gap: var(--s-150); flex-wrap: wrap; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s-100) var(--s-150); font-size: 14px; }
+.map-legend-item { display: flex; align-items: center; gap: 8px; }
+.legend-dot { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
+.legend-dot.field { border: 2px solid #555; background: #fafafa; }
+.legend-dot.patch { background: #c2410c; }
+.legend-dot.trail { background: #c2410c; border: 1px dashed #fff; }

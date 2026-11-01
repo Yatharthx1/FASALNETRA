@@ -189,5 +189,15 @@
   "walk.where.near_field": "खेत {m} मीटर दूर है",
   "walk.where.away": "आप खेत से {km} किलोमीटर दूर हैं। खेत पर जाकर लिंक खोलिए।",
   "result.advisory_llm": "सलाह AI ने ICAR की जानकारी से लिखी, दवा की मात्रा ICAR तालिका से",
-  "result.advisory_template": "सलाह ICAR तालिका और फसल की अवस्था से"
+  "result.advisory_template": "सलाह ICAR तालिका और फसल की अवस्था से",
+  "didi.tabs.pending": "लंबित टिकट",
+  "didi.tabs.closed": "पूर्ण टिकट",
+  "didi.call": "किसान को कॉल करें",
+  "didi.mark_done": "पूरा हुआ चिह्नित करें",
+  "didi.legend_field": "किसान का खेत",
+  "didi.legend_patch": "प्रभावित हिस्सा (वेब वॉक से दर्ज)",
+  "didi.legend_trail": "किसान का चलने का रास्ता",
+  "didi.patch_of_field": "{field} एकड़ में से {zone} एकड़ प्रभावित",
+  "didi.no_pending": "फिलहाल कोई लंबित टिकट नहीं है।",
+  "didi.no_closed": "अभी तक कोई पूर्ण टिकट नहीं है।"
 }
