@@ -18,6 +18,11 @@ os.environ.update({
     "PUBLIC_BASE_URL": "http://test",
     "POSTGRES_URL": "",
     "DEMO_MODE": "true",
+    "DEMO_FARMER_PREREGISTERED": "true",   # the PRD fixtures: demo farmer known, two sample tickets in the queue
+    "DEMO_SEED_NEIGHBOURS": "true",
+    "DEMO_PROBLEM_LEVEL": "",
+    "OPENAI_API_KEY": "",
+    "OPEN_AI_API_KEY": "",
 })
 
 import numpy as np  # noqa: E402

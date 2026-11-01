@@ -38,6 +38,13 @@ LEAF_KINDS = {"leaf_top", "leaf_under", "chewed"}
 CAUSE_HI = {"yellow_mosaic": "पीला मोज़ेक", "fungal": "पत्तों का झुलसा", "chewing_damage": "इल्ली का नुकसान",
             "girdle_beetle": "गर्डल बीटल (चक्र भृंग)",
             "water_stress": "पानी की कमी या जलभराव", "nutrient": "खाद की कमी"}
+# Spoken cultural practice per cause: the Hindi of the "cultural" column in data/seed/advisory_table.json
+CULTURAL_HI = {"yellow_mosaic": "बीमार पौधे उखाड़कर नष्ट कीजिए और खेत में पीले चिपचिपे ट्रैप लगाइए।",
+               "girdle_beetle": "कटे हुए पौधों के हिस्से जल्दी तोड़कर नष्ट कीजिए।",
+               "chewing_damage": "खेत में पक्षियों के बैठने के लिए टी आकार की लकड़ियां लगाइए।",
+               "fungal": "खेत में पानी जमा मत होने दीजिए और घनी बुवाई से बचिए।",
+               "water_stress": "सूखा हो तो सिंचाई कीजिए, पानी भरा हो तो नाली खोलिए।",
+               "nutrient": "मृदा स्वास्थ्य कार्ड के अनुसार खाद डालिए, KVK से पूछिए।"}
 
 
 class CaseNotFound(LookupError):
@@ -82,6 +89,17 @@ async def create(db: AsyncSession, field_id: str) -> Case:
     return case
 
 
+def problem_level(photos: list[Photo], cause: str) -> str:
+    """How bad the problem looks to the farmer (not how sure we are): the worst photo severity for that cause."""
+    leaf = [p for p in photos if p.kind in LEAF_KINDS]
+    leaf = [p for p in leaf if not p.vision.get("quality", {}).get("retake_reason")] or leaf   # sharp ones first
+    same = [p for p in leaf if evidence.PHOTO_TO_CAUSE.get(p.vision.get("label")) == cause] or leaf
+    if not same or all(p.vision.get("label") == "healthy" for p in same):
+        return "low"
+    sev = max(int(p.vision.get("severity") or 0) for p in same)
+    return "high" if sev >= 3 else "medium" if sev == 2 else "low"
+
+
 def result_context(case: Case) -> dict | None:
     """What the IVR result call says about this case: cause, confidence, zone and dose, all from the evidence."""
     ev = case.evidence
@@ -90,7 +108,11 @@ def result_context(case: Case) -> dict | None:
     spray = (ev.get("plan") or {}).get("spray")
     return {"name_hi": CAUSE_HI.get(ev["cause"], ev["name_hi"]), "pct": round(ev["confidence"] * 100), "acres": case.zone_acres,
             "action": ev["action"], "spray": {"quantity": spray["quantity"], "unit": spray["unit"]} if spray else None,
-            "say_hi": (ev.get("advisory") or {}).get("say_hi")}
+            "say_hi": (ev.get("advisory") or {}).get("say_hi"),
+            "problem_level": ev.get("problem_level"), "can_book": spray is not None,
+            "advice": {"cultural_hi": CULTURAL_HI.get(ev["cause"]),
+                       **({k: spray.get(k) for k in ("product", "dose_per_acre", "unit", "quantity", "water_l")}
+                          if spray else {})}}
 
 
 async def ivr_context(db: AsyncSession, phone: str) -> dict | None:
@@ -185,6 +207,8 @@ async def on_ivr_action(db: AsyncSession, phone: str, step: str, digit: str | No
             await emit(db, "booking_skipped", case.id, reason=str(exc))
     elif action in ("record_whitefly_yes", "record_whitefly_no"):
         await save_keypad(db, case, {"whitefly_under_leaves": action == "record_whitefly_yes"})
+    elif action in ("self_advice", "exit") and step in ("result_prompt", "self_advice"):
+        await emit(db, "farmer_choice", case.id, choice=action)
     elif action.startswith("record_feedback_"):
         await emit(db, "followup_recorded", case.id, feedback=action.removeprefix("record_feedback_"))
 
@@ -227,7 +251,7 @@ async def add_photo(db: AsyncSession, case: Case, data: bytes, kind: str, spot: 
     if result["quality"]["ok"] and kindwise.available():   # costs a credit: only for photos we keep
         result["expert"] = await asyncio.to_thread(kindwise.classify, data, lat, lon)
     # second, independent vote: the trained offline model next to the LLM, else the CLIP neighbours
-    if vision.provider() == "gemini" and local_model.head_trained():
+    if vision.provider() in vision.LLM_PROVIDERS and local_model.head_trained():
         result["match"] = await asyncio.to_thread(local_model.classify, data)
     elif knn.available():
         result["match"] = await asyncio.to_thread(knn.vote, data)
@@ -311,6 +335,7 @@ async def build_evidence(db: AsyncSession, case: Case) -> Case:
                         zone_acres=case.zone_acres or scan["summary"]["flagged_acres"],
                         field_profile=await asyncio.to_thread(field_profile, f.farmer.phone),
                         photo_expert=_expert_vote(case.photos), season=seasonality.season_vote(fields.today()))
+    ev["problem_level"] = settings.demo_problem_level or problem_level(case.photos, ev["cause"])
     ev["savings"] = advisory.savings(f.area_acres, case.zone_acres or 0, ev["cause"],
                                      settings.pesticide_price_inr_per_unit)
     await asyncio.to_thread(_route, ev, f, das, case.zone_acres or scan["summary"]["flagged_acres"])
@@ -417,7 +442,7 @@ def _photo_line(p: Photo, first_ok: bool) -> str:
         return "फोटो में अंधेरा है, रोशनी की तरफ मुड़कर फिर से लीजिए।" if retake == "dark"             else "फोटो धुंधली है। फोन स्थिर रखिए और पत्ते के पास से फिर लीजिए।"
     adv = p.vision.get("advice")
     if first_ok and adv and p.vision.get("label") not in ("healthy", "unsure"):
-        return f"फोटो मिल गई। पहली जांच में {CAUSE_HI.get(adv['cause'], adv['name_hi'])} का शक है। बाकी निशानों की फोटो भी लीजिए।"
+        return f"फोटो मिल गई। पहली जांच में {CAUSE_HI.get(adv['cause'], adv['name_hi'])} का शक है। पूरी जांच हो रही है, कॉल पर बने रहिए।"
     return "फोटो मिल गई, साफ है।"
 
 
@@ -434,7 +459,7 @@ async def live_tick(db: AsyncSession, phone: str, state: dict) -> tuple[str, str
     lines: list[str] = []
     if not state.get("opened_said") and await _was_opened(db, case.id):
         state["opened_said"] = True
-        lines.append("लिंक खुल गया। कैमरा चालू होगा, लाल लाइन के साथ पहले निशान तक चलिए।")
+        lines.append("लिंक खुल गया। कैमरा चालू होगा, बीमार पत्ते के पास फोन ले जाइए, फोटो अपने आप खिंच जाएगी।")
     leaf = [p for p in case.photos if p.kind in LEAF_KINDS]
     said = state.get("photos_said", 0)
     for p in leaf[said:]:

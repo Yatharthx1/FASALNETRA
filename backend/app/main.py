@@ -27,9 +27,13 @@ async def _setup() -> None:
         await conn.run_sync(Base.metadata.create_all)
     async with SessionLocal() as db:
         await fields.seed_demo(db)
-        await didi.seed_demo_tickets(db)
-    # PRD: the demo farmer is pre-registered, so his missed call goes straight to "report a problem"
-    await asyncio.to_thread(ivr_service.ensure_registered, settings.demo_farmer_phone, settings.demo_farmer_name, "Rampura")
+        if settings.demo_seed_neighbours:
+            await didi.seed_demo_tickets(db)
+    # Live demo: the team's number onboards by IVR from the first missed call. Pre-registered (old PRD script):
+    # the missed call goes straight to "report a problem".
+    if settings.demo_farmer_preregistered:
+        await asyncio.to_thread(ivr_service.ensure_registered, settings.demo_farmer_phone, settings.demo_farmer_name,
+                                "Rampura")
 
 
 async def ensure_ready() -> None:

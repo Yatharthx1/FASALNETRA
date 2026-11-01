@@ -21,8 +21,51 @@ REPORT_SYMPTOMS = {
 }
 
 
+# Result menu (demo flow): problem level in plain Hindi, then 1 Namo Drone Didi, 2 self-advisory, 3 exit
+LEVEL_HI = {"high": "ज़्यादा", "medium": "मध्यम", "low": "कम"}
+MENU_BOOK, MENU_SELF, MENU_EXIT = "1", "2", "3"
+MENU_TEXT = ("नमो ड्रोन दीदी से सिर्फ बीमार हिस्से में छिड़काव करवाने के लिए 1 दबाइए। "
+             "खुद दवा डालने की सलाह सुनने के लिए 2 दबाइए। कॉल खत्म करने के लिए 3 दबाइए।")
+GOODBYE_TEXT = "धन्यवाद! फसलनेत्र आपके खेत पर नज़र रखेगा। कोई भी समस्या हो तो इसी नंबर पर मिस्ड कॉल दीजिए।"
+
+
+def self_advice_text(context: dict[str, Any]) -> str:
+    """What the farmer can do on their own: product and dose from the ICAR-NSRI table, never from the model."""
+    a = context.get("advice") or {}
+    parts = [a["cultural_hi"]] if a.get("cultural_hi") else []
+    if a.get("product"):
+        dose = f"{a['dose_per_acre']:g} {a['unit']} प्रति एकड़" if a.get("dose_per_acre") else ""
+        total = (f" आपके बीमार हिस्से के लिए कुल {a['quantity']:g} {a['unit']} दवा, {a['water_l']:g} लीटर पानी में मिलाइए।"
+                 if a.get("quantity") else "")
+        parts.append(f"दवा: {a['product']}, {dose}।{total} सिर्फ बीमार हिस्से में छिड़किए, पूरे खेत में नहीं। "
+                     "छिड़काव सुबह या शाम को कीजिए, जब हवा कम हो और बारिश न हो। दस्ताने और मास्क पहनिए।")
+    else:
+        parts.append("इसमें कीटनाशक की ज़रूरत नहीं है।")
+    return " ".join(parts)
+
+
+def _level_prompt(context: dict[str, Any]) -> dict[str, Any]:
+    """Demo result call: the suspected problem, its level, and the 1/2/3 menu (high) or the advice (lower)."""
+    level = context.get("problem_level") or "medium"
+    where = f" लगभग {context['acres']:.1f} एकड़ हिस्से में" if context.get("acres") else ""
+    head = (f"नमस्ते! आपकी फोटो की जांच हो गई है। आपकी फसल में{where} {context['name_hi']} का शक है। "
+            f"समस्या का स्तर {LEVEL_HI[level]} है।")
+    cfg = {"step": "result_prompt", "prompt_id": f"p06_level_{level}"}
+    if not context.get("can_book"):   # no pesticide for this cause: nothing for Drone Didi to spray
+        return {**cfg, "prompt_text": f"{head} {self_advice_text(context)} {GOODBYE_TEXT}",
+                "num_digits": 0, "valid_digits": [], "hangup": True}
+    if level == "high":
+        text = f"{head} जल्दी इलाज ज़रूरी है। {MENU_TEXT} दोबारा सुनने के लिए 9 दबाइए।"
+    else:
+        text = f"{head} {self_advice_text(context)} {MENU_TEXT} दोबारा सुनने के लिए 9 दबाइए।"
+    return {**cfg, "prompt_text": text, "num_digits": 1, "valid_digits": [MENU_BOOK, MENU_SELF, MENU_EXIT],
+            "hangup": False}
+
+
 def _result_prompt(context: dict[str, Any]) -> dict[str, Any]:
     """Result call built from the farmer's case evidence (see services/cases.result_context)."""
+    if context.get("problem_level"):
+        return _level_prompt(context)
     where = f"लगभग {context['acres']:.1f} एकड़ हिस्से" if context.get("acres") else "एक हिस्से"
     head = (f"नमस्ते! ICAR-NSRI की सलाह और फोटो जांच के अनुसार आपके खेत के {where} में "
             f"{context['pct']} प्रतिशत {context['name_hi']} का शक है।")
@@ -107,7 +150,7 @@ def get_registered_flow_config(flow: str, step: str, farmer: Any = None,
                 "step": "sms_dispatched",
                 "prompt_id": "p02_live_hold",
                 "prompt_text": f"धन्यवाद! आपके फोन पर {settings.link_channel_hi} में एक लिंक आया है, उसे दबाइए। कॉल मत काटिए, फोन स्पीकर पर रखिए। "
-                               "कैमरा खुलेगा, लाल लाइन के साथ चलकर बीमार पत्तों की फोटो लीजिए। फोटो आते ही मैं यहीं बताऊंगी।",
+                               "कैमरा खुलेगा, बीमार पत्ते की फोटो लीजिए। जांच होते ही मैं यहीं बताऊंगी।",
                 "num_digits": 0,
                 "valid_digits": [],
                 "hangup": False,
@@ -128,6 +171,30 @@ def get_registered_flow_config(flow: str, step: str, farmer: Any = None,
                 "num_digits": 1,
                 "valid_digits": ["1"],
                 "hangup": False,
+            }
+        elif step == "self_advice":
+            return {
+                "step": "self_advice",
+                "prompt_id": "p06_self_advice",
+                "prompt_text": f"{self_advice_text(context or {})} नमो ड्रोन दीदी से छिड़काव करवाने के लिए 1 दबाइए। "
+                               "दोबारा सुनने के लिए 9 दबाइए। कॉल खत्म करने के लिए 3 दबाइए।",
+                "num_digits": 1,
+                "valid_digits": [MENU_BOOK, MENU_EXIT],
+                "hangup": False,
+            }
+        elif step == "goodbye":
+            return {"step": "goodbye", "prompt_id": "p06_goodbye", "prompt_text": GOODBYE_TEXT,
+                    "num_digits": 0, "valid_digits": [], "hangup": True}
+        elif step == "booking_confirmed" and context and context.get("problem_level"):
+            return {
+                "step": "booking_confirmed",
+                "prompt_id": "p06_namo_didi_booked",
+                "prompt_text": f"धन्यवाद! नमो ड्रोन दीदी, {settings.didi_name}, को आपके खेत का नक्शा, बीमार हिस्सा और दवा "
+                               "की जानकारी भेज दी गई है। वे जल्द ही आपसे संपर्क करेंगी और सिर्फ बीमार हिस्से में छिड़काव करेंगी। "
+                               "इससे दवा, पानी और पैसे की बचत होगी। धन्यवाद।",
+                "num_digits": 0,
+                "valid_digits": [],
+                "hangup": True,
             }
         elif step == "booking_confirmed" and context and context["action"] == "didi_verify":
             return {
@@ -272,25 +339,41 @@ def process_registered_step_input(
         }
 
     # Flow 3: Result & Drone Booking
-    if flow == "result" and current_step == "result_prompt":
-        if clean_digits == "1":
+    if flow == "result" and current_step in ("result_prompt", "self_advice"):
+        if clean_digits == MENU_BOOK:
             return {
                 "next_step": "booking_confirmed",
                 "reprompt": False,
                 "reprompt_count": 0,
                 "action": "confirm_drone_booking",
-                "message": "Key 1 pressed: Drone booking confirmed.",
+                "message": "Key 1 pressed: Namo Drone Didi booked.",
+            }
+        if clean_digits == MENU_SELF and current_step == "result_prompt":
+            return {
+                "next_step": "self_advice",
+                "reprompt": False,
+                "reprompt_count": 0,
+                "action": "self_advice",
+                "message": "Key 2 pressed: self-advisory spoken.",
+            }
+        if clean_digits == MENU_EXIT:
+            return {
+                "next_step": "goodbye",
+                "reprompt": False,
+                "reprompt_count": 0,
+                "action": "exit",
+                "message": "Key 3 pressed: call ended.",
             }
         if reprompt_count < 1:
             return {
-                "next_step": "result_prompt",
+                "next_step": current_step,
                 "reprompt": True,
                 "reprompt_count": reprompt_count + 1,
                 "action": "reprompt",
-                "message": "कृपया बुकिंग की पुष्टि के लिए 1 दबाएं।",
+                "message": "कृपया ड्रोन दीदी के लिए 1, सलाह के लिए 2, या कॉल खत्म करने के लिए 3 दबाइए।",
             }
         return {
-            "next_step": "booking_confirmed",
+            "next_step": "goodbye",
             "reprompt": False,
             "reprompt_count": 0,
             "action": "exit",

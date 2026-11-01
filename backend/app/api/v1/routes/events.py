@@ -5,7 +5,7 @@ from sqlalchemy import delete, func, select
 
 from backend.app.api.deps import DbDep
 from backend.app.core.config import settings
-from backend.app.db.models import Case, DidiJob, Event, Photo
+from backend.app.db.models import Case, DidiJob, Event, Field, FieldOwner, GpsFix, Photo
 from backend.app.schemas import EventOut
 from backend.app.services import didi
 from backend.app.services.events import broadcaster, emit
@@ -49,13 +49,31 @@ async def events_ws(ws: WebSocket) -> None:
 
 
 @router.post("/demo/reset", response_model=EventOut)
-async def demo_reset(db: DbDep) -> EventOut:
-    """Wipe cases, photos, jobs and events so the demo can run again from the warning call."""
+async def demo_reset(db: DbDep, neighbours: bool = False) -> EventOut:
+    """Clean slate for the live demo: every case, photo, job and event, every phone-onboarded farmer and field,
+    and every IVR call, so the team's registered number onboards again from the first missed call.
+    The demo parcel (cached satellite) stays. neighbours=true re-seeds the two sample tickets in Didi's queue."""
     if not settings.demo_mode:
         from fastapi import HTTPException
         raise HTTPException(403, "Reset only allowed in demo mode")
-    for model in (Photo, DidiJob, Case, Event):
+    for model in (GpsFix, Photo, DidiJob, Case, Event):
         await db.execute(delete(model))
+    await db.execute(delete(Field).where(Field.id != "demo"))
+    demo = await db.get(Field, "demo")
+    await db.execute(delete(FieldOwner).where(FieldOwner.id != (demo.farmer_id if demo else -1)))
     await db.commit()
-    await didi.seed_demo_tickets(db)
+    await asyncio.to_thread(_reset_ivr)
+    if neighbours:
+        await didi.seed_demo_tickets(db)
     return await emit(db, "demo_reset")
+
+
+def _reset_ivr() -> None:
+    from backend.app.db.session import SessionLocal
+    from backend.app.models.farmer import Farmer
+    from backend.app.models.ivr_session import IVRSession
+
+    with SessionLocal() as s:
+        s.query(IVRSession).delete()
+        s.query(Farmer).delete()
+        s.commit()

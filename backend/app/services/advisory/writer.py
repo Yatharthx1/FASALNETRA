@@ -121,23 +121,48 @@ def _ask_gemini(facts: dict) -> dict:
     return {**json.loads(text), "model": llm.FAST_MODEL}
 
 
+def _ask_openai(facts: dict) -> dict:
+    import openai
+
+    from backend.app.services.vision import llm, openai_llm
+
+    examples = knowledge.EXAMPLES.get(facts["crop"].lower(), [])
+    prefix = (INSTRUCTIONS + "\nEXAMPLES (tone and order only; their facts are not this field's):\n"
+              + "\n".join(json.dumps(e, ensure_ascii=False) for e in examples)
+              + "\nAnswer with one JSON object with the keys: " + ", ".join(SCHEMA["properties"]))
+    case = {k: v for k, v in facts.items() if k != "allowed_numbers"}
+    resp = openai.OpenAI(api_key=openai_llm.api_key(), timeout=30).chat.completions.create(
+        model=openai_llm.FAST_MODEL, temperature=0.2, response_format={"type": "json_object"},
+        messages=[{"role": "system", "content": prefix},
+                  {"role": "user", "content": "FACTS:\n" + json.dumps(case, ensure_ascii=False)}])
+    u = resp.usage
+    price = openai_llm.PRICES.get(openai_llm.FAST_MODEL)
+    cost = (u.prompt_tokens * price[0] + u.completion_tokens * price[1]) / 1e6 if (u and price) else None
+    llm.tracker = llm.tracker.add(llm.CostRecord(openai_llm.FAST_MODEL, u.prompt_tokens if u else 0,
+                                                 u.completion_tokens if u else 0, cost))
+    return {**json.loads(resp.choices[0].message.content), "model": openai_llm.FAST_MODEL}
+
+
 def provider() -> str:
     p = os.environ.get("ADVISORY_PROVIDER", "").strip().lower()
     if p:
         return p
+    from backend.app.services.vision import openai_llm
+    if openai_llm.api_key():
+        return "openai"
     return "gemini" if (os.environ.get("VISION_API_KEY") or os.environ.get("GEMINI_API_KEY")) else "template"
 
 
 def write(facts: dict, ask=None) -> dict:
     """Advisory for one high-confidence case. `ask` (facts -> raw LLM dict) is injectable for tests."""
-    use_llm = ask is not None or provider() == "gemini"
+    use_llm = ask is not None or provider() in ("gemini", "openai")
     if not use_llm:
         return template(facts)
     from backend.app.services.vision import llm
     if ask is None and llm.tracker.over_budget:
         return {**template(facts), "note": "LLM budget spent"}
     try:
-        raw = (ask or _ask_gemini)(facts)
+        raw = (ask or (_ask_openai if provider() == "openai" else _ask_gemini))(facts)
         return {**check(raw, facts), "source": "llm", "model": raw.get("model")}
     except Rejected as exc:
         log.warning("Advisory LLM answer rejected: %s", exc)

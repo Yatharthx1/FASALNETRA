@@ -123,6 +123,7 @@ def ticket(job: DidiJob) -> dict:
         "zone_acres": case.zone_acres or job.plan.get("zone_acres"),
         "walk_trail": case.walk_trail or [],
         "cause": ev.get("cause"), "confidence": ev.get("confidence"), "level": ev.get("level"),
+        "problem_level": ev.get("problem_level"),
         "symptoms": row.get("symptoms_hi") or row.get("symptoms", []), "symptoms_en": row.get("symptoms", []),
         "name_en": row.get("name_en"), "name_hi": row.get("name_hi"),
         "distance_km": round(dist_km, 1),

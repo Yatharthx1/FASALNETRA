@@ -170,3 +170,30 @@ def test_inbound_callback_flow_by_farmer_state():
     result_farmer = SimpleNamespace(status="registered", active_flow="result")
     assert inbound_flow(result_farmer, SimpleNamespace(flow="result", status="in_progress")) == "result"
     assert inbound_flow(result_farmer, SimpleNamespace(flow="result", status="completed")) == "report"
+
+
+# --- demo result menu: problem level, 1 Namo Drone Didi / 2 self-advisory / 3 exit ----------------------
+
+def _leaf(label: str, severity: int, retake: str | None = None):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(kind="leaf_top", vision={"label": label, "severity": severity,
+                                                    "quality": {"retake_reason": retake}})
+
+
+def test_problem_level_follows_the_worst_sharp_photo_of_the_cause():
+    from backend.app.services.cases import problem_level
+
+    assert problem_level([_leaf("yellow_mosaic", 2), _leaf("yellow_mosaic", 3)], "yellow_mosaic") == "high"
+    assert problem_level([_leaf("yellow_mosaic", 2), _leaf("yellow_mosaic", 3, "blurry")], "yellow_mosaic") == "medium"
+    assert problem_level([_leaf("healthy", 0)], "yellow_mosaic") == "low"
+
+
+def test_high_problem_offers_the_three_way_menu_before_any_advice():
+    ctx = {"name_hi": "पीला मोज़ेक", "pct": 80, "acres": 0.4, "action": "didi_verify", "problem_level": "high",
+           "can_book": True, "advice": {"product": "X", "dose_per_acre": 50.6, "unit": "ml", "quantity": 20.2,
+                                        "water_l": 8.1, "cultural_hi": "ट्रैप लगाइए।"}}
+    cfg = get_registered_flow_config("result", "result_prompt", None, ctx)
+    assert cfg["valid_digits"] == ["1", "2", "3"] and "ज़्यादा" in cfg["prompt_text"]
+    assert "50.6 ml" not in cfg["prompt_text"]          # the dose comes only after key 2
+    assert "50.6 ml प्रति एकड़" in get_registered_flow_config("result", "self_advice", None, ctx)["prompt_text"]

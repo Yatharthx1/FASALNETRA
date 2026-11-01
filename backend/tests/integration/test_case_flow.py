@@ -85,8 +85,8 @@ async def test_full_demo_flow_ends_with_a_zone_only_spray(client):
     assert ev["level"] == "high" and ev["action"] == "advise_spray"
 
     said = (await client.post(f"{API}/cases/{cid}/result-call")).json()["first_prompt"]["prompt_text"]
-    assert f"{round(ev['confidence'] * 100)} प्रतिशत पीला मोज़ेक का शक" in said
-    assert f"{walked['zone_acres']:.1f} एकड़" in said and "ICAR-NSRI" in said
+    assert "पीला मोज़ेक का शक" in said and "समस्या का स्तर" in said
+    assert f"{walked['zone_acres']:.1f} एकड़" in said and "नमो ड्रोन दीदी" in said
     jobs_for_case = lambda js: [j for j in js if j["case_id"] == cid]  # noqa: E731
     assert not jobs_for_case((await client.get(f"{API}/didi/jobs")).json())   # not booked before the key press
     await client.post(f"{API}/ivr/simulate/registered", json={"phone": phone, "digits": "1"})

@@ -14,7 +14,8 @@ from PIL import Image, ImageOps
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 VISION_DIR = REPO_ROOT / "data" / "processed" / "vision"
-REFERENCES = VISION_DIR / "references"          # references/<label>/*.jpg, 1-2 per label, never in the test set
+REFERENCES = VISION_DIR / "references"          # references/<label>/*.jpg, few-shot examples, never in the test set
+REFS_PER_LABEL = int(os.environ.get("VISION_REFS_PER_LABEL", "3"))
 CACHE_FILE = VISION_DIR / "llm_cache.json"
 CALIBRATION_FILE = VISION_DIR / "calibration.json"
 
@@ -57,7 +58,9 @@ How to decide:
    Holes in the leaf blade = chewing_damage; ring cuts on a stalk with drooping leaves above = girdle_beetle.
 4. If the leaf is out of focus, too far away, or not soybean, answer "unsure". Guessing is worse than "unsure".
 5. confidence: your probability (0-1) that the label is correct.
-6. severity: 0 none, 1 a few spots, 2 clear damage on many leaves, 3 most of the leaf area affected.
+6. severity: 0 none; 1 a few small spots or holes on one or two leaves; 2 clear damage on several leaves or up to
+   about a third of the leaf area; 3 heavy damage: more than a third of the leaf area yellowed, spotted, eaten or
+   dried, or most leaves in the photo affected.
 7. whitefly_visible: true only if you can see small white winged insects."""
 
 
@@ -90,7 +93,8 @@ def _jpeg(img: Image.Image) -> bytes:
 def _references() -> list[tuple[str, bytes]]:
     refs = []
     for label in LABELS:
-        for p in sorted((REFERENCES / label).glob("*.jp*g"))[:2]:
+        files = [p for p in sorted((REFERENCES / label).glob("*")) if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")]
+        for p in files[:REFS_PER_LABEL]:
             refs.append((label, _jpeg(_load(p)[0])))
     return refs
 
@@ -132,6 +136,13 @@ def _ask_gemini(jpeg: bytes, refs: list[tuple[str, bytes]]) -> dict:
     return llm.ask([types.Content(role="user", parts=parts)], config, json.loads)
 
 
+def _ask_openai(jpeg: bytes, refs: list[tuple[str, bytes]]) -> dict:
+    from backend.app.services.vision import openai_llm
+
+    labels = "\n".join(f"- {k}: {v}" for k, v in LABEL_HINTS.items())
+    return openai_llm.ask(openai_llm.build_messages(PROMPT.format(labels=labels), refs, jpeg), LABELS)
+
+
 def calibrate(label: str, raw_conf: float) -> float:
     """Replace the model's self-reported confidence with its measured accuracy at that confidence."""
     if not CALIBRATION_FILE.exists():
@@ -145,12 +156,19 @@ def calibrate(label: str, raw_conf: float) -> float:
     return raw_conf
 
 
+LLM_PROVIDERS = ("openai", "gemini")
+
+
 def provider() -> str:
-    """gemini (LLM, needs a key) | local (offline CLIP model) | mock (fixed answer for demos and tests).
-    Unset: gemini when a key is present, else the offline model."""
+    """openai | gemini (vision LLMs, need a key) | local (offline CLIP model) | mock (fixed answer for demos and tests).
+    Unset: openai when its key is present, then gemini, else the offline model."""
+    from backend.app.services.vision import openai_llm
+
     p = os.environ.get("VISION_PROVIDER", "").strip().lower()
     if p:
         return p
+    if openai_llm.api_key():
+        return "openai"
     return "gemini" if (os.environ.get("VISION_API_KEY") or os.environ.get("GEMINI_API_KEY")) else "local"
 
 
@@ -188,6 +206,11 @@ def classify(image: bytes | str | Path, use_cache: bool = True) -> dict:
                 raise VisionUnavailable("Offline model needs `pip install sentence-transformers`; "
                                         "or set GEMINI_API_KEY, or VISION_PROVIDER=mock for the demo")
             out = local.classify(img)
+        elif which == "openai":
+            from backend.app.services.vision import openai_llm
+            if not openai_llm.api_key():
+                raise VisionUnavailable("OpenAI vision needs OPENAI_API_KEY (or OPEN_AI_API_KEY) in .env")
+            out = _ask_openai(_jpeg(img), _references())
         else:
             if not (os.environ.get("VISION_API_KEY") or os.environ.get("GEMINI_API_KEY")):
                 raise VisionUnavailable("Vision AI not configured: set GEMINI_API_KEY, VISION_PROVIDER=local "
@@ -199,6 +222,6 @@ def classify(image: bytes | str | Path, use_cache: bool = True) -> dict:
         if use_cache:
             _save_cache(cache)
     # Only the LLM's self-reported confidence is calibrated; the trained head is calibrated by construction.
-    conf = calibrate(out["label"], out["confidence"]) if which == "gemini" else out["confidence"]
+    conf = calibrate(out["label"], out["confidence"]) if which in LLM_PROVIDERS else out["confidence"]
     return {**out, "raw_confidence": out["confidence"], "confidence": conf,
             "quality": q, "image_sha256": key, "advice": advice(out["label"])}

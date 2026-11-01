@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     demo_farmer_name: str = "Ramesh-ji"
     demo_farmer_phone: str = "+919876543210"
     demo_sowing_age_days: int = 40
+    demo_farmer_preregistered: bool = False   # True: skip IVR onboarding for DEMO_FARMER_PHONE
+    demo_seed_neighbours: bool = False        # True: two sample neighbour tickets in Didi's queue at startup
+    demo_problem_level: str = ""   # "high" | "medium" | "low" pins the spoken problem level; blank = from the photos
     demo_field_geojson: Path = REPO_ROOT / "data" / "field-geojson" / "demo-field.geojson"
 
     # Public tunnel / URL

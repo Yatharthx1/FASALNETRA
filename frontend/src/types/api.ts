@@ -57,6 +57,8 @@ export interface SprayPlan {
 }
 export interface Evidence {
   cause: Cause; name_hi: string; confidence: number; level: "high" | "medium" | "low";
+  /** how bad it looks (photo severity), told to the farmer; level above is how sure we are */
+  problem_level?: "high" | "medium" | "low";
   action: "advise_spray" | "didi_verify" | "advise_no_pesticide" | "expert_check";
   spray_allowed: boolean; agreeing_signals: string[]; low_spot_warning: boolean; signals: Signal[];
   alternatives: { cause: string; share: number }[];
@@ -92,6 +94,7 @@ export interface Job {
     farmer: string; village: string; khasra: string; phone?: string; crop_days: number; field: Polygon; field_acres: number;
     zone?: Geometry | null; zone_acres?: number; walk_trail?: [number, number][];
     cause: Cause; confidence: number; level: "high" | "medium" | "low" | null; symptoms: string[]; distance_km: number;
+    problem_level?: "high" | "medium" | "low" | null;
   };
   created_at: string; updated_at: string;
 }

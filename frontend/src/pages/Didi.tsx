@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ArrowLeft, Bell, CheckCircle2, ChevronRight, Droplets, MapPin, Phone,
-  ShieldCheck, Stethoscope, Users
+  ArrowLeft, BatteryCharging, Bell, CheckCircle2, ChevronRight, Droplets, FlaskConical, MapPin, Phone,
+  ShieldCheck, Stethoscope, Timer, Users
 } from "lucide-react";
 import AnimatedFieldGraphic from "../components/AnimatedFieldGraphic";
 import { ErrorNotice, Skeleton, useAsync } from "../components/common";
@@ -178,6 +178,11 @@ function TicketCard({ job, onOpen }: { job: Job; onOpen: () => void }) {
           <span className="body-6 num">
             {causeName(tk.cause)} · {Math.round(tk.confidence * 100)}%
           </span>
+          {tk.problem_level && (
+            <span className={`chip level-${tk.problem_level}`}>
+              {t("didi.problem_level", { level: t(`didi.level.${tk.problem_level}` as Key) })}
+            </span>
+          )}
           <span className="body-6 muted num">
             · {t("didi.patch_of_field", { zone: fmt(patchAcres, 2), field: fmt(tk.field_acres, 2) })}
           </span>
@@ -250,9 +255,9 @@ function TicketDetail({ job, onBack, onChange }: { job: Job; onBack: () => void;
           <h3 id="map-graphic-title" className="heading-6">
             <MapPin size={22} aria-hidden="true" /> {t("didi.sec.where")}
           </h3>
-          <span className="caption-5 muted">
-            {t("didi.patch_of_field", { zone: fmt(patchAcres, 2), field: fmt(tk.field_acres, 2) })}
-          </span>
+          <a className="btn" target="_blank" rel="noreferrer" href={directions(tk.field)}>
+            <MapPin size={16} aria-hidden="true" /> {t("didi.navigate")}
+          </a>
         </div>
 
         <div className="didi-map-graphic">
@@ -298,6 +303,11 @@ function TicketDetail({ job, onBack, onChange }: { job: Job; onBack: () => void;
               {Math.round(tk.confidence * 100)}%
             </span>
           </p>
+          {tk.problem_level && (
+            <p className={`chip level-${tk.problem_level}`} style={{ alignSelf: "flex-start" }}>
+              {t("didi.problem_level", { level: t(`didi.level.${tk.problem_level}` as Key) })}
+            </p>
+          )}
           <p className="body-6 muted">
             {t("didi.khasra", { k: tk.khasra })} · {t("didi.crop_days", { d: tk.crop_days })}
           </p>
@@ -337,6 +347,8 @@ function TicketDetail({ job, onBack, onChange }: { job: Job; onBack: () => void;
           </p>
         </section>
       </div>
+
+      <SavingsPanel job={job} />
 
       {/* Clean Status Actions */}
       <div className="row" aria-live="polite" style={{ marginTop: "var(--s-100)" }}>
@@ -384,5 +396,39 @@ function TicketDetail({ job, onBack, onChange }: { job: Job; onBack: () => void;
         )}
       </div>
     </div>
+  );
+}
+
+/** Google Maps directions to the middle of the field (mean of the outer ring's corners). */
+function directions(field: Job["ticket"]["field"]) {
+  const ring = field.coordinates[0];
+  const [lon, lat] = ring.reduce(([a, b], [x, y]) => [a + x / ring.length, b + y / ring.length], [0, 0]);
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat.toFixed(6)},${lon.toFixed(6)}`;
+}
+
+/** What spraying only the patch saves against the whole field: two planned routes on the same field (didi.py). */
+function SavingsPanel({ job }: { job: Job }) {
+  const sv = job.savings;
+  if (!sv) return null;
+  const items = [
+    { icon: <BatteryCharging size={22} aria-hidden="true" />, value: fmt(sv.battery.saved, 1), unit: "", label: t("didi.saved.battery") },
+    { icon: <FlaskConical size={22} aria-hidden="true" />, value: fmt(sv.pesticide.saved, 0), unit: sv.pesticide.unit ?? "", label: t("didi.saved.pesticide") },
+    { icon: <Droplets size={22} aria-hidden="true" />, value: fmt(sv.water_l.saved, 0), unit: "L", label: t("didi.saved.water") },
+    { icon: <Timer size={22} aria-hidden="true" />, value: fmt(sv.flight_min.saved, 0), unit: t("didi.min"), label: t("didi.saved.time") },
+  ];
+  return (
+    <section className="panel stack" aria-labelledby="sec-saved">
+      <h3 id="sec-saved" className="heading-6">{t("didi.sec.saved")}</h3>
+      <div className="savings-grid">
+        {items.map((it) => (
+          <div key={it.label} className="saving">
+            {it.icon}
+            <span className="big-num num">{it.value}<span className="caption-5"> {it.unit}</span></span>
+            <span className="caption-5">{it.label}</span>
+          </div>
+        ))}
+      </div>
+      <p className="body-6 muted num">{t("didi.saved.acres", { acres: fmt(sv.acres_not_sprayed, 2) })}</p>
+    </section>
   );
 }

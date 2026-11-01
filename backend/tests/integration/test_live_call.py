@@ -63,7 +63,7 @@ async def test_live_call_speaks_photos_then_the_result_and_books_didi(client):
 
     result = await _poll(client)
     assert result["flow"] == "result" and result["current_step"] == "result_prompt"
-    assert result["valid_digits"] == ["1"]
+    assert result["valid_digits"] == ["1", "2", "3"] and "समस्या का स्तर" in result["prompt_text"]
     booked = (await client.post(f"{API}/ivr/simulate/registered", json={"phone": PHONE, "digits": "1"})).json()
     assert booked["current_step"] == "booking_confirmed"
     assert await _events(client, "didi_booked") or await _events(client, "booking_skipped")
@@ -85,3 +85,23 @@ async def test_failed_sms_keeps_the_call_alive_and_logs_the_link(client, monkeyp
     failed = await _events(client, "sms_failed")
     assert failed and "/walk?t=" in failed[0]["payload"]["url"]
     assert (await _poll(client))["current_step"] == "sms_dispatched"
+
+
+async def test_key_2_speaks_the_table_dose_then_key_3_ends_the_call(client):
+    await _onboard(client)
+    url = (await _events(client, "sms_sent"))[0]["payload"]["url"]
+    case = (await client.get(f"{API}/cases/by-token?t={url.split('t=')[1]}")).json()
+    cell = case["target_cells"][0]
+    await client.post(f"{API}/cases/{case['id']}/photos",
+                      data={"kind": "leaf_top", "spot": 0, "cell_id": cell["id"], "lon": cell["centre"][0],
+                            "lat": cell["centre"][1]},
+                      files={"file": ("leaf.jpg", jpeg(), "image/jpeg")})
+    await client.post(f"{API}/cases/{case['id']}/evidence")
+    assert (await _poll(client))["current_step"] == "result_prompt"
+
+    advice = (await client.post(f"{API}/ivr/simulate/registered", json={"phone": PHONE, "digits": "2"})).json()
+    assert advice["current_step"] == "self_advice" and "Thiamethoxam" in advice["prompt_text"]
+    assert "प्रति एकड़" in advice["prompt_text"] and advice["valid_digits"] == ["1", "3"]
+    bye = (await client.post(f"{API}/ivr/simulate/registered", json={"phone": PHONE, "digits": "3"})).json()
+    assert bye["current_step"] == "goodbye" and bye["is_completed"]
+    assert not await _events(client, "didi_booked")

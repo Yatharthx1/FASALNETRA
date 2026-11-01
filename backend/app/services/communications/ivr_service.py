@@ -216,7 +216,7 @@ REGISTERED_FIRST_STEP = {
     "report": "report_prompt",
 }
 # sms_dispatched is not done: the call holds there (live loop) until the result is spoken or it times out
-REGISTERED_DONE_STEPS = ["booking_confirmed", "followup_recorded", "completed"]
+REGISTERED_DONE_STEPS = ["booking_confirmed", "followup_recorded", "completed", "goodbye"]
 
 
 def inbound_flow(farmer: Farmer | None, session: IVRSession | None = None) -> str:

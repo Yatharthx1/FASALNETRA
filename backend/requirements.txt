@@ -17,6 +17,7 @@ rasterio>=1.4
 pystac-client>=0.8
 planetary-computer>=1.0
 google-genai>=1.0
+openai>=1.50
 boto3>=1.34              # SMS_PROVIDER=aws (AWS End User Messaging SMS)
 # optional: offline photo model (VISION_PROVIDER=local) and CLIP photo-match vote (downloads ~600 MB model on first use)
 # sentence-transformers>=3.0

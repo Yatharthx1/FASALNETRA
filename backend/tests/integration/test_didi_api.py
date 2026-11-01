@@ -23,9 +23,17 @@ async def test_profile_counts_open_and_done_jobs(client):
     assert p["name"] and p["jobs_open"] >= 2 and p["jobs_done"] == 0
 
 
-async def test_reset_keeps_the_seeded_tickets(client):
-    await client.post(f"{API}/demo/reset")
+async def test_reset_with_neighbours_reseeds_the_sample_tickets(client):
+    await client.post(f"{API}/demo/reset?neighbours=true")
     assert len((await client.get(f"{API}/didi/jobs")).json()) >= 2
+
+
+async def test_plain_reset_clears_every_farmer_so_the_demo_number_onboards_again(client):
+    await client.post(f"{API}/demo/reset")
+    assert (await client.get(f"{API}/didi/jobs")).json() == []
+    session = (await client.get(f"{API}/ivr/session/+919876543210")).json()
+    assert session["farmer"] is None and session["session"] is None
+    assert (await client.get(f"{API}/fields/demo")).status_code == 200   # the demo parcel (cached satellite) stays
 
 
 async def test_farmer_says_yes_on_low_confidence_and_didi_gets_a_verify_ticket(client):

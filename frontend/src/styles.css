@@ -280,3 +280,8 @@ ul.plain { margin: 0; padding-left: 1.1em; }
 .legend-dot.field { border: 2px solid #555; background: #fafafa; }
 .legend-dot.patch { background: #c2410c; }
 .legend-dot.trail { background: #c2410c; border: 1px dashed #fff; }
+
+/* Drone Didi: what zone-only spraying saved */
+.savings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--s-100); }
+.saving { display: flex; flex-direction: column; gap: 2px; padding: var(--s-100); border-radius: 12px;
+  background: var(--leaf-100); color: var(--leaf-800); }

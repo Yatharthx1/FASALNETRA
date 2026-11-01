@@ -1,5 +1,27 @@
 # Phone demo (real Twilio calls + SMS link on the farmer's phone)
 
+## Live demo script (soybean, team's registered number)
+
+1. Clean slate (wipes every farmer, case, call and Didi ticket; keeps the demo parcel):
+   `curl -X POST https://<host>/api/v1/demo/reset` (add `?neighbours=true` for two sample tickets in Didi's queue)
+2. Phone 2: open `https://<host>/didi` (Drone Didi). Queue is empty.
+3. Phone 1 (DEMO_FARMER_PHONE) dials the Twilio number -> rejected -> callback -> onboarding:
+   `1` Hindi, `1` soybean, `3` 30-60 days, PIN `458001`, `1` village, `1` urad/moong, `1` grassy border.
+4. Call stays on (speaker). WhatsApp link arrives -> open it -> camera opens straight away (no walking) ->
+   hold the high-damage leaf photo steady -> auto-capture.
+5. OpenAI vision (`VISION_PROVIDER=openai`, few-shot from `data/processed/vision/references/`) -> the call says
+   the suspected problem and its level (ज़्यादा / मध्यम / कम). High: `1` Namo Drone Didi, `2` self-advice
+   (product + dose per acre from the ICAR table), `3` end.
+6. On `1`: Phone 2 shows the new ticket instantly (banner + voice): map with the sick patch, what and how much
+   to spray, and what zone-only spraying saved (battery charges, pesticide, water, flight minutes).
+
+Problem level = worst photo severity from the vision model (3 high, 2 medium, else low).
+`DEMO_PROBLEM_LEVEL=high` in `.env` pins it if the demo photo comes back "medium".
+`DEMO_FARMER_PREREGISTERED=true` restores the old script (missed call skips onboarding).
+
+Rehearse without calls or WhatsApp: `python scripts/run_sim.py` (port 8001, its own database, real OpenAI
+vision), then drive the keys from `/call` or `/api/v1/ivr/simulate/*`.
+
 ## Live deployment (AWS)
 
 - Server: EC2 `fasalnetra-api` (`i-087d8d71e4ae857fe`, t3.micro, ap-south-1), fixed IP 13.205.168.88
